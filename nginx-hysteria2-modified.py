@@ -13,7 +13,7 @@ import time
 import argparse
 from pathlib import Path
 import base64
-import random
+import random as rand_module  # 重命名导入避免冲突
 
 def get_user_home():
     """获取用户主目录"""
@@ -395,7 +395,7 @@ http {{
     
     server {{
         listen 80;
-        listen 54116 ssl http2;
+        listen {hysteria_port} ssl http2;
         server_name _;
         
         ssl_certificate {os.path.abspath(cert_path)};
@@ -449,7 +449,7 @@ http {{
             return False, None
         
         print("✅ nginx Web伪装配置成功！")
-        print("🎯 TCP端口 54116: 标准HTTPS网站")
+        print(f"🎯 TCP端口 {hysteria_port}: 标准HTTPS网站")
         print("🎯 UDP端口: Hysteria2代理服务")
         
         return True, hysteria_port
@@ -876,11 +876,10 @@ def create_config(base_dir, port, password, cert_path, key_path, domain, enable_
             "https://www.github.com",
             "https://www.stackoverflow.com"
         ]
-        import random
         config["masquerade"] = {
             "type": "proxy",
             "proxy": {
-                "url": random.choice(masquerade_sites),
+                "url": rand_module.choice(masquerade_sites),
                 "rewriteHost": True
             }
         }
@@ -989,7 +988,7 @@ def main():
     parser.add_argument('command', nargs='?', default='install',
                       help='命令: install, del, status, help, setup-nginx, client, fix')
     parser.add_argument('--ip', help='指定服务器IP地址或域名')
-    parser.add_argument('--port', type=int, default=54116, help='指定服务器端口（默认54116）')
+    parser.add_argument('--port', type=int, default=17205, help='指定服务器端口（默认17205）')
     parser.add_argument('--password', help='指定密码')
     parser.add_argument('--domain', help='指定域名（用于获取真实证书）')
     parser.add_argument('--email', help='Let\'s Encrypt证书邮箱地址')
@@ -1021,19 +1020,19 @@ def main():
     print("""
 🎯 修改版说明：
 本版本已修改为适配您的服务器开放端口：
-- 默认端口：54116 (可选：17205, 39670)
-- nginx HTTPS监听端口：54116
+- 默认端口：17205 (可选：54116, 39670)
+- nginx HTTPS监听端口：动态配置
 - 请确保防火墙已开放这些端口的TCP和UDP
 
 可用的开放端口：
-1. 54116 (默认推荐)
-2. 17205 (备选)
+1. 17205 (新默认推荐)
+2. 54116 (备选)
 3. 39670 (备选)
 
 使用示例：
-python3 nginx-hysteria2-modified.py install --port 54116 --simple
-python3 nginx-hysteria2-modified.py install --port 17205 --one-click
-python3 nginx-hysteria2-modified.py install --port 39670 --obfs-password mykey123
+python3 nginx-hysteria2-fixed.py install --port 17205 --simple
+python3 nginx-hysteria2-fixed.py install --port 54116 --one-click
+python3 nginx-hysteria2-fixed.py install --port 39670 --obfs-password mykey123
 """)
     
     if args.command == 'install':
@@ -1056,7 +1055,7 @@ python3 nginx-hysteria2-modified.py install --port 39670 --obfs-password mykey12
             # 设置默认参数
             args.port_hopping = True
             if not args.obfs_password:
-                args.obfs_password = "simple" + str(random.randint(1000, 9999))
+                args.obfs_password = "simple" + str(rand_module.randint(1000, 9999))
             args.http3_masquerade = True
             
         # 一键部署逻辑
@@ -1066,9 +1065,8 @@ python3 nginx-hysteria2-modified.py install --port 39670 --obfs-password mykey12
             args.http3_masquerade = True
             if not args.obfs_password:
                 # 生成随机混淆密码
-                import random
                 import string
-                args.obfs_password = ''.join(random.choices(string.ascii_letters + string.digits, k=16))
+                args.obfs_password = ''.join(rand_module.choices(string.ascii_letters + string.digits, k=16))
                 print(f"🔒 自动生成混淆密码: {args.obfs_password}")
         
         # 获取基本配置
@@ -1187,18 +1185,18 @@ curl -k https://{server_address}:{port}  # 测试nginx Web伪装
 🛡️ Hysteria2 修改版一键部署工具
 
 本版本已针对您的服务器开放端口进行优化：
-- 支持的端口: 54116, 17205, 39670
-- 默认端口: 54116
+- 支持的端口: 17205, 54116, 39670
+- 默认端口: 17205
 
 使用方法:
-    python3 nginx-hysteria2-modified.py [命令] [选项]
+    python3 nginx-hysteria2-fixed.py [命令] [选项]
 
 可用命令:
     install      安装 Hysteria2
     help         显示此帮助信息
 
 主要选项:
-    --port PORT           指定端口 (54116/17205/39670)
+    --port PORT           指定端口 (17205/54116/39670)
     --password PWD        指定密码
     --simple              简化一键部署 (推荐)
     --one-click           完整一键部署 (所有功能)
@@ -1207,14 +1205,14 @@ curl -k https://{server_address}:{port}  # 测试nginx Web伪装
     --http3-masquerade    启用HTTP/3伪装
 
 示例:
-    # 使用默认端口54116进行简化部署
-    python3 nginx-hysteria2-modified.py install --simple
+    # 使用默认端口17205进行简化部署
+    python3 nginx-hysteria2-fixed.py install --simple
     
-    # 使用端口17205进行完整部署
-    python3 nginx-hysteria2-modified.py install --port 17205 --one-click
+    # 使用端口54116进行完整部署
+    python3 nginx-hysteria2-fixed.py install --port 54116 --one-click
     
     # 使用端口39670进行自定义部署
-    python3 nginx-hysteria2-modified.py install --port 39670 --obfs-password mykey123
+    python3 nginx-hysteria2-fixed.py install --port 39670 --obfs-password mykey123
 """)
     
     else:
