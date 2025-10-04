@@ -3192,9 +3192,26 @@ def setup_config_download_service(server_address, v2rayn_file, clash_file, hyste
         # 创建HTTP服务器脚本
         server_script = f'''#!/usr/bin/env python3
 import os
+import sys
 import http.server
 import socketserver
 from urllib.parse import urlparse
+
+def safe_print(*args, **kwargs):
+    """安全的UTF-8 print函数，处理编码问题"""
+    try:
+        print(*args, **kwargs)
+    except UnicodeEncodeError:
+        # 如果出现编码错误，尝试使用UTF-8编码
+        try:
+            message = ' '.join(str(arg) for arg in args)
+            # 直接写入到stdout，使用UTF-8编码
+            sys.stdout.buffer.write((message + '\\n').encode('utf-8'))
+            sys.stdout.flush()
+        except:
+            # 最后的备选方案：使用ASCII编码并忽略错误
+            message = ' '.join(str(arg) for arg in args)
+            print(message.encode('ascii', 'ignore').decode('ascii'))
 
 class ConfigHandler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
