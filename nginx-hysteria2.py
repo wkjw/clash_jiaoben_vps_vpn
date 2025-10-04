@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 import os
 import sys
 import json
@@ -15,8 +16,36 @@ from pathlib import Path
 import base64
 import random
 
+# 设置UTF-8编码环境
+if sys.platform.startswith('win'):
+    # Windows环境下设置控制台编码
+    import locale
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+    if hasattr(sys.stderr, 'reconfigure'):
+        sys.stderr.reconfigure(encoding='utf-8')
+else:
+    # Linux/Unix环境
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
+
+def safe_print(*args, **kwargs):
+    """安全的UTF-8 print函数，处理编码问题"""
+    try:
+        print(*args, **kwargs)
+    except UnicodeEncodeError:
+        # 如果出现编码错误，尝试使用UTF-8编码
+        try:
+            message = ' '.join(str(arg) for arg in args)
+            # 直接写入到stdout，使用UTF-8编码
+            sys.stdout.buffer.write((message + '\n').encode('utf-8'))
+            sys.stdout.flush()
+        except:
+            # 最后的备选方案：使用ASCII编码并忽略错误
+            message = ' '.join(str(arg) for arg in args)
+            print(message.encode('ascii', 'ignore').decode('ascii'))
+
 def get_user_home():
-    """获取用户主目录"""
+    """Get user home directory"""
     return str(Path.home())
 
 def get_system_info():
@@ -2511,8 +2540,8 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
     """
     Hysteria2完整一键部署：端口跳跃 + 混淆 + nginx Web伪装
     """
-    print("开始Hysteria2完整部署...")
-    print("部署内容：端口跳跃 + Salamander混淆 + nginx Web伪装")
+    safe_print("开始Hysteria2完整部署...")
+    safe_print("部署内容：端口跳跃 + Salamander混淆 + nginx Web伪装")
     
     # 1. 创建目录
     base_dir = create_directories()
@@ -3795,4 +3824,22 @@ def generate_multi_port_subscription(server_address, password, obfs_password, po
     return subscription_file, subscription_plain_file, len(selected_ports)
 
 if __name__ == "__main__":
-    main() 
+    # 确保在主程序运行前设置正确的编码
+    try:
+        # 设置默认编码为UTF-8
+        if hasattr(sys, 'set_int_max_str_digits'):
+            sys.set_int_max_str_digits(0)
+        main()
+    except UnicodeEncodeError as e:
+        print(f"编码错误: {e}")
+        print("正在尝试以UTF-8编码重新运行...")
+        # 如果仍有编码问题，尝试设置环境变量后重新运行
+        import locale
+        try:
+            locale.setlocale(locale.LC_ALL, 'zh_CN.UTF-8')
+        except:
+            try:
+                locale.setlocale(locale.LC_ALL, 'C.UTF-8')
+            except:
+                pass
+        main() 
