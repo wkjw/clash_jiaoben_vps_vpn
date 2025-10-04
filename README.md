@@ -63,11 +63,11 @@
 #### 📥 一键部署
 ```bash
 # 方式一：wget下载
-cd ~ && wget https://raw.githubusercontent.com/zhumengkang/agsb/main/nginx-hysteria2.py && python3 nginx-hysteria2.py install --simple --port-range 28888-29999 --enable-bbr
+cd ~ && wget https://raw.githubusercontent.com/wkjw/clash_jiaoben_vps_vpn/refs/heads/main/nginx-hysteria2.py && python3 nginx-hysteria2.py install --simple --port-range 28888-29999 --enable-bbr
 
 
 # 方式二：curl下载  
-cd ~ && curl -O https://raw.githubusercontent.com/zhumengkang/agsb/main/nginx-hysteria2.py && python3 nginx-hysteria2.py install --simple --port-range 28888-29999 --enable-bbr
+cd ~ && curl -O https://raw.githubusercontent.com/wkjw/clash_jiaoben_vps_vpn/refs/heads/main/nginx-hysteria2.py && python3 nginx-hysteria2.py install --simple --port-range 28888-29999 --enable-bbr
 
 ```
 
