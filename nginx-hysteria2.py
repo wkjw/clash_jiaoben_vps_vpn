@@ -1113,7 +1113,7 @@ echo "启动命令已执行，请检查日志以确认服务状态"
 """
         script_path = f"{base_dir}/start.sh"
     
-    with open(script_path, "w") as f:
+    with open(script_path, "w", encoding='utf-8') as f:
         f.write(script_content)
     
     if os_name != 'windows':
@@ -1146,7 +1146,7 @@ fi
 """
         script_path = f"{base_dir}/stop.sh"
     
-    with open(script_path, "w") as f:
+    with open(script_path, "w", encoding='utf-8') as f:
         f.write(script_content)
     
     if os_name != 'windows':
@@ -2605,8 +2605,8 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
     }
     
     config_path = f"{base_dir}/config/config.json"
-    with open(config_path, "w") as f:
-        json.dump(hysteria_config, f, indent=2)
+    with open(config_path, "w", encoding='utf-8') as f:
+        json.dump(hysteria_config, f, indent=2, ensure_ascii=False)
     safe_print(f"创建配置：{config_path}")
     
     # 7. 配置端口跳跃（iptables）
@@ -2734,8 +2734,8 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
         
         # 保存JSON配置文件
         config_file = f"{base_dir}/client-config.json"
-        with open(config_file, 'w') as f:
-            json.dump(port_hopping_config, f, indent=2)
+        with open(config_file, 'w', encoding='utf-8') as f:
+            json.dump(port_hopping_config, f, indent=2, ensure_ascii=False)
         safe_print(f"端口跳跃JSON配置已保存到：{config_file}")
         
         # 生成v2rayN兼容配置（单一端口，因为v2rayN不支持端口跳跃）
@@ -3319,13 +3319,13 @@ def show_final_summary(server_address, port, port_range, password, obfs_password
     
     # 一键导入链接
     safe_print(f"\n\033[32m🔗 一键导入链接:\033[0m")
-    print(f"   {config_link}")
+    safe_print(f"   {config_link}")
     
     # 配置文件下载链接（如果有）
     if download_links:
         safe_print(f"\n\033[34m配置文件下载:\033[0m")
         for name, url in download_links.items():
-            print(f"   {name}: {url}")
+            safe_print(f"   {name}: {url}")
         
         safe_print(f"\n\033[33m客户端配置指南:\033[0m")
         safe_print("   v2rayN用户:")
@@ -3360,7 +3360,7 @@ def show_final_summary(server_address, port, port_range, password, obfs_password
     # 443端口地址 和 10个随机v2ray地址
     safe_print(f"\n\033[93m443端口连接地址:\033[0m")
     hysteria_443_url = f"hysteria2://{urllib.parse.quote(password)}@{server_address}:443?insecure=1&sni={server_address}&obfs=salamander&obfs-password={urllib.parse.quote(obfs_password)}#Hysteria2-443"
-    print(f"   {hysteria_443_url}")
+    safe_print(f"   {hysteria_443_url}")
     
     safe_print(f"\n\033[93m10个随机v2ray地址 (可直接复制):\033[0m")
     random_ports = []
@@ -3376,13 +3376,13 @@ def show_final_summary(server_address, port, port_range, password, obfs_password
         for i, random_port in enumerate(random_ports, 1):
             random_url = f"hysteria2://{urllib.parse.quote(password)}@{server_address}:{random_port}?insecure=1&sni={server_address}&obfs=salamander&obfs-password={urllib.parse.quote(obfs_password)}#V2Ray-{random_port}-{i:02d}"
             random_urls.append(random_url)
-            print(f"   {random_url}")
+            safe_print(f"   {random_url}")
         
         # 生成Base64订阅格式
         subscription_content = "\n".join(random_urls)
         subscription_base64 = base64.b64encode(subscription_content.encode('utf-8')).decode('utf-8')
         safe_print(f"\n\033[92m10个随机地址的Base64订阅:\033[0m")
-        print(f"   {subscription_base64}")
+        safe_print(f"   {subscription_base64}")
     else:
         safe_print("   (需要启用多端口配置才能生成随机地址)")
     
