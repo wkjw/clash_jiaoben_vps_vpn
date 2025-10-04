@@ -709,7 +709,7 @@ Allow: /
 Sitemap: /sitemap.xml
 """
     try:
-        with open(f"{web_dir}/robots.txt", "w") as f:
+        with open(f"{web_dir}/robots.txt", "w", encoding='utf-8') as f:
             f.write(robots_txt)
     except PermissionError:
         import tempfile
@@ -748,7 +748,7 @@ Sitemap: /sitemap.xml
   </url>
 </urlset>"""
     try:
-        with open(f"{web_dir}/sitemap.xml", "w") as f:
+        with open(f"{web_dir}/sitemap.xml", "w", encoding='utf-8') as f:
             f.write(sitemap_xml)
     except PermissionError:
         import tempfile
@@ -1068,8 +1068,8 @@ def create_config(base_dir, port, password, cert_path, key_path, domain, enable_
         }
     
     config_path = f"{base_dir}/config/config.json"
-    with open(config_path, "w") as f:
-        json.dump(config, f, indent=2)
+    with open(config_path, "w", encoding='utf-8') as f:
+        json.dump(config, f, indent=2, ensure_ascii=False)
     
     return config_path
 
@@ -1655,7 +1655,7 @@ def create_nginx_masquerade(base_dir, domain, web_dir):
     
     # 创建nginx配置文件
     nginx_conf_file = f"{base_dir}/nginx.conf"
-    with open(nginx_conf_file, "w") as f:
+    with open(nginx_conf_file, "w", encoding='utf-8') as f:
         f.write(nginx_conf)
     
     return nginx_conf_file
@@ -2276,8 +2276,8 @@ curl -k https://{domain}  # HTTPS访问
                 )
                 # 清理配置文件中的临时信息
                 del config["_port_hopping"]
-                with open(config_path, 'w') as f:
-                    json.dump(config, f, indent=2)
+                with open(config_path, 'w', encoding='utf-8') as f:
+                    json.dump(config, f, indent=2, ensure_ascii=False)
         
         # 创建启动脚本
         start_script = create_service_script(base_dir, binary_path, config_path, port)
@@ -3302,10 +3302,10 @@ def show_final_summary(server_address, port, port_range, password, obfs_password
     import urllib.parse
     """显示最终的完整摘要信息 - 包含下载链接、客户端链接和作者信息"""
     
-    print("\n" + "="*80)
-    print("\033[36m┌──────────────────────────────────────────────────────────────────────────────┐\033[0m")
+    safe_print("\n" + "="*80)
+    safe_print("\033[36m┌──────────────────────────────────────────────────────────────────────────────┐\033[0m")
     safe_print("\033[36m│                            Hysteria2 部署完成！                             │\033[0m")
-    print("\033[36m└──────────────────────────────────────────────────────────────────────────────┘\033[0m")
+    safe_print("\033[36m└──────────────────────────────────────────────────────────────────────────────┘\033[0m")
     
     # 服务器信息
     safe_print("\n\033[33m服务器信息:\033[0m")
@@ -3387,34 +3387,34 @@ def show_final_summary(server_address, port, port_range, password, obfs_password
         safe_print("   (需要启用多端口配置才能生成随机地址)")
     
     # 作者信息
-    print("\n" + "="*80)
-    print("\033[36m┌──────────────────────────────────────────────────────────────────────────────┐\033[0m")
+    safe_print("\n" + "="*80)
+    safe_print("\033[36m┌──────────────────────────────────────────────────────────────────────────────┐\033[0m")
     safe_print("\033[36m│                                  作者信息                                      │\033[0m")
-    print("\033[36m├──────────────────────────────────────────────────────────────────────────────┤\033[0m")
+    safe_print("\033[36m├──────────────────────────────────────────────────────────────────────────────┤\033[0m")
     safe_print("\033[36m│ \033[32m作者: 康康                                                  \033[36m│\033[0m")
-    print("\033[36m│ \033[32mGithub: https://github.com/zhumengkang/                    \033[36m│\033[0m")
+    safe_print("\033[36m│ \033[32mGithub: https://github.com/zhumengkang/                    \033[36m│\033[0m")
     safe_print("\033[36m│ \033[32mYouTube: https://www.youtube.com/@康康的V2Ray与Clash         \033[36m│\033[0m")
-    print("\033[36m│ \033[32mTelegram: https://t.me/+WibQp7Mww1k5MmZl                   \033[36m│\033[0m")
-    print("\033[36m└──────────────────────────────────────────────────────────────────────────────┘\033[0m")
-    print("="*80)
+    safe_print("\033[36m│ \033[32mTelegram: https://t.me/+WibQp7Mww1k5MmZl                   \033[36m│\033[0m")
+    safe_print("\033[36m└──────────────────────────────────────────────────────────────────────────────┘\033[0m")
+    safe_print("="*80)
     
     # 保存配置信息到全局文件
     save_global_config(server_address, port, port_range, password, obfs_password, hysteria_443_url, random_ports)
     
     # 醒目的成功信息
-    print("\n" + ""*20)
-    print("\033[32m" + "="*80 + "\033[0m")
-    print("\033[32m" + "║" + " "*78 + "║" + "\033[0m")
+    safe_print("\n" + ""*20)
+    safe_print("\033[32m" + "="*80 + "\033[0m")
+    safe_print("\033[32m" + "║" + " "*78 + "║" + "\033[0m")
     safe_print("\033[32m" + "║" + "部署完成！连接成功后即可享受高速稳定的网络体验！".center(76) + "║" + "\033[0m")
-    print("\033[32m" + "║" + " "*78 + "║" + "\033[0m")
+    safe_print("\033[32m" + "║" + " "*78 + "║" + "\033[0m")
     safe_print("\033[32m" + "║" + "已创建全局管理命令，输入 'kk' 进入管理菜单".center(74) + "║" + "\033[0m")
-    print("\033[32m" + "║" + " "*78 + "║" + "\033[0m")
+    safe_print("\033[32m" + "║" + " "*78 + "║" + "\033[0m")
     safe_print("\033[32m" + "║" + "菜单功能：1-查看节点 2-查看配置 3-服务状态 4-重启服务 5-查看日志 6-删除服务".center(66) + "║" + "\033[0m")
-    print("\033[32m" + "║" + " "*78 + "║" + "\033[0m")
+    safe_print("\033[32m" + "║" + " "*78 + "║" + "\033[0m")
     safe_print("\033[32m" + "║" + "如遇问题，请联系作者获取技术支持".center(70) + "║" + "\033[0m")
-    print("\033[32m" + "║" + " "*78 + "║" + "\033[0m")
-    print("\033[32m" + "="*80 + "\033[0m")
-    print(""*20 + "\n")
+    safe_print("\033[32m" + "║" + " "*78 + "║" + "\033[0m")
+    safe_print("\033[32m" + "="*80 + "\033[0m")
+    safe_print(""*20 + "\n")
 
 def save_global_config(server_address, port, port_range, password, obfs_password, hysteria_443_url, random_ports):
     """保存配置信息到全局文件，并创建kk命令"""
