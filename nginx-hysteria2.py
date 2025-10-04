@@ -82,11 +82,11 @@ def ensure_nginx_user():
         try:
             result = subprocess.run(['id', 'nginx'], check=True, capture_output=True, text=True)
             if result.returncode == 0:
-                print("nginx用户已存在")
+                safe_print("nginx用户已存在")
                 return 'nginx'
         except:
             # nginx用户不存在，创建它
-            print("nginx用户不存在，正在创建...")
+            safe_print("nginx用户不存在，正在创建...")
             
             # 创建nginx系统用户（无登录shell，无家目录）
             try:
@@ -98,24 +98,24 @@ def ensure_nginx_user():
                     '--comment', 'nginx web server',  # 注释
                     'nginx'
                 ], check=True, capture_output=True)
-                print("nginx用户创建成功")
+                safe_print("nginx用户创建成功")
                 return 'nginx'
             except subprocess.CalledProcessError as e:
                 # 如果创建失败，可能是因为用户已存在但id命令失败，或其他原因
-                print(f"创建nginx用户失败: {e}")
+                safe_print(f"创建nginx用户失败: {e}")
                 
                 # 再次检查用户是否存在（可能是并发创建）
                 try:
                     subprocess.run(['id', 'nginx'], check=True, capture_output=True)
-                    print("nginx用户实际上已存在")
+                    safe_print("nginx用户实际上已存在")
                     return 'nginx'
                 except:
                     # 确实创建失败，fallback到root用户
-                    print("使用root用户作为nginx运行用户")
+                    safe_print("使用root用户作为nginx运行用户")
                     return 'root'
         
     except Exception as e:
-        print(f"处理nginx用户时出错: {e}")
+        safe_print(f"处理nginx用户时出错: {e}")
         # 出错时使用root用户
         return 'root'
 
@@ -123,18 +123,18 @@ def set_nginx_permissions(web_dir):
     """设置nginx目录的正确权限"""
     try:
         nginx_user = ensure_nginx_user()
-        print(f"设置目录权限: {web_dir}")
-        print(f"使用用户: {nginx_user}")
+        safe_print(f"设置目录权限: {web_dir}")
+        safe_print(f"使用用户: {nginx_user}")
         
         # 设置目录和文件权限
         subprocess.run(['sudo', 'chown', '-R', f'{nginx_user}:{nginx_user}', web_dir], check=True)
         subprocess.run(['sudo', 'chmod', '-R', '755', web_dir], check=True)
         subprocess.run(['sudo', 'find', web_dir, '-type', 'f', '-exec', 'chmod', '644', '{}', ';'], check=True)
         
-        print(f"权限设置完成: {web_dir} (用户: {nginx_user})")
+        safe_print(f"权限设置完成: {web_dir} (用户: {nginx_user})")
         return True
     except Exception as e:
-        print(f"设置权限失败: {e}")
+        safe_print(f"设置权限失败: {e}")
         return False
 
 def check_port_available(port):
@@ -234,11 +234,11 @@ def download_file(url, save_path, max_retries=3):
     """下载文件，带重试机制"""
     for i in range(max_retries):
         try:
-            print(f"正在下载... (尝试 {i+1}/{max_retries})")
+            safe_print(f"正在下载... (尝试 {i+1}/{max_retries})")
             urllib.request.urlretrieve(url, save_path)
             return True
         except Exception as e:
-            print(f"下载失败: {e}")
+            safe_print(f"下载失败: {e}")
             if i < max_retries - 1:
                 time.sleep(2)  # 等待2秒后重试
             continue
@@ -296,9 +296,9 @@ def download_hysteria2(base_dir):
         if os_name == 'windows':
             binary_path += '.exe'
         
-        print(f"正在下载 Hysteria2 {version}...")
-        print(f"系统类型: {os_name}, 架构: {arch}, 文件名: {filename}")
-        print(f"下载链接: {url}")
+        safe_print(f"正在下载 Hysteria2 {version}...")
+        safe_print(f"系统类型: {os_name}, 架构: {arch}, 文件名: {filename}")
+        safe_print(f"下载链接: {url}")
         
         # 使用wget下载
         try:
@@ -306,29 +306,29 @@ def download_hysteria2(base_dir):
             has_curl = shutil.which('curl') is not None
             
             if has_wget:
-                print("使用wget下载...")
+                safe_print("使用wget下载...")
                 subprocess.run(['wget', '--tries=3', '--timeout=15', '-O', binary_path, url], check=True)
             elif has_curl:
-                print("使用curl下载...")
+                safe_print("使用curl下载...")
                 subprocess.run(['curl', '-L', '--connect-timeout', '15', '-o', binary_path, url], check=True)
             else:
-                print("系统无wget/curl，尝试使用Python下载...")
+                safe_print("系统无wget/curl，尝试使用Python下载...")
                 urllib.request.urlretrieve(url, binary_path)
                 
             # 验证下载
             if not verify_binary(binary_path):
                 raise Exception("下载的文件无效")
                 
-            print(f"下载成功: {binary_path}, 大小: {os.path.getsize(binary_path)/1024/1024:.2f}MB")
+            safe_print(f"下载成功: {binary_path}, 大小: {os.path.getsize(binary_path)/1024/1024:.2f}MB")
             return binary_path, version
             
         except Exception as e:
-            print(f"自动下载失败: {e}")
-            print("请按照以下步骤手动下载:")
-            print(f"1. 访问 https://github.com/apernet/hysteria/releases/tag/app/{version}")
-            print(f"2. 下载 {filename} 文件")
-            print(f"3. 将文件重命名为 hysteria (不要加后缀) 并移动到 {base_dir}/ 目录")
-            print(f"4. 执行: chmod +x {base_dir}/hysteria")
+            safe_print(f"自动下载失败: {e}")
+            safe_print("请按照以下步骤手动下载:")
+            safe_print(f"1. 访问 https://github.com/apernet/hysteria/releases/tag/app/{version}")
+            safe_print(f"2. 下载 {filename} 文件")
+            safe_print(f"3. 将文件重命名为 hysteria (不要加后缀) 并移动到 {base_dir}/ 目录")
+            safe_print(f"4. 执行: chmod +x {base_dir}/hysteria")
             
             # 询问用户文件是否已放置
             while True:
@@ -336,16 +336,16 @@ def download_hysteria2(base_dir):
                 if user_input == 'y':
                     # 检查文件是否存在
                     if os.path.exists(binary_path) and verify_binary(binary_path):
-                        print("文件验证成功，继续安装...")
+                        safe_print("文件验证成功，继续安装...")
                         return binary_path, version
                     else:
-                        print(f"文件不存在或无效，请确保放在 {binary_path} 位置。")
+                        safe_print(f"文件不存在或无效，请确保放在 {binary_path} 位置。")
                 elif user_input == 'n':
-                    print("中止安装。")
+                    safe_print("中止安装。")
                     sys.exit(1)
     
     except Exception as e:
-        print(f"下载错误: {e}")
+        safe_print(f"下载错误: {e}")
         sys.exit(1)
 
 def get_ip_address():
@@ -381,29 +381,29 @@ def get_ip_address():
 
 def setup_nginx_smart_proxy(base_dir, domain, web_dir, cert_path, key_path, hysteria_port):
     """设置nginx Web伪装：TCP端口显示正常网站，UDP端口用于Hysteria2"""
-    print("正在配置nginx Web伪装...")
+    safe_print("正在配置nginx Web伪装...")
     
     try:
         # 检查证书文件
-        print(f"检查证书文件路径:")
-        print(f"证书文件: {cert_path}")
-        print(f"密钥文件: {key_path}")
+        safe_print(f"检查证书文件路径:")
+        safe_print(f"证书文件: {cert_path}")
+        safe_print(f"密钥文件: {key_path}")
         
         if not os.path.exists(cert_path):
-            print(f"证书文件不存在: {cert_path}")
+            safe_print(f"证书文件不存在: {cert_path}")
             cert_path, key_path = generate_self_signed_cert(base_dir, domain)
         
         if not os.path.exists(key_path):
-            print(f"密钥文件不存在: {key_path}")
+            safe_print(f"密钥文件不存在: {key_path}")
             cert_path, key_path = generate_self_signed_cert(base_dir, domain)
         
-        print(f"最终使用的证书路径:")
-        print(f"证书: {cert_path}")
-        print(f"密钥: {key_path}")
+        safe_print(f"最终使用的证书路径:")
+        safe_print(f"证书: {cert_path}")
+        safe_print(f"密钥: {key_path}")
         
         # 确保nginx用户存在
         nginx_user = ensure_nginx_user()
-        print(f"使用nginx用户: {nginx_user}")
+        safe_print(f"使用nginx用户: {nginx_user}")
         
         # 创建nginx标准Web配置
         nginx_conf = f"""user {nginx_user};
@@ -446,7 +446,7 @@ http {{
 }}"""
         
         # 更新nginx配置
-        print("备份当前nginx配置...")
+        safe_print("备份当前nginx配置...")
         subprocess.run(['sudo', 'cp', '/etc/nginx/nginx.conf', '/etc/nginx/nginx.conf.backup'], check=True)
         
         import tempfile
@@ -459,32 +459,32 @@ http {{
         subprocess.run(['sudo', 'rm', '-f', '/etc/nginx/conf.d/*.conf'], check=True)
         
         # 测试并重启
-        print("测试nginx配置...")
+        safe_print("测试nginx配置...")
         test_result = subprocess.run(['sudo', 'nginx', '-t'], capture_output=True, text=True)
         if test_result.returncode != 0:
-            print(f"nginx配置测试失败:")
-            print(f"错误信息: {test_result.stderr}")
+            safe_print(f"nginx配置测试失败:")
+            safe_print(f"错误信息: {test_result.stderr}")
             subprocess.run(['sudo', 'cp', '/etc/nginx/nginx.conf.backup', '/etc/nginx/nginx.conf'], check=True)
-            print("已恢复nginx配置备份")
+            safe_print("已恢复nginx配置备份")
             return False, None
         
-        print("nginx配置测试通过")
+        safe_print("nginx配置测试通过")
         
-        print("重启nginx服务...")
+        safe_print("重启nginx服务...")
         restart_result = subprocess.run(['sudo', 'systemctl', 'restart', 'nginx'], capture_output=True, text=True)
         if restart_result.returncode != 0:
-            print(f"nginx重启失败:")
-            print(f"错误信息: {restart_result.stderr}")
+            safe_print(f"nginx重启失败:")
+            safe_print(f"错误信息: {restart_result.stderr}")
             return False, None
         
-        print("nginx Web伪装配置成功！")
-        print("TCP端口: 标准HTTPS网站")
-        print("UDP端口: Hysteria2代理服务")
+        safe_print("nginx Web伪装配置成功！")
+        safe_print("TCP端口: 标准HTTPS网站")
+        safe_print("UDP端口: Hysteria2代理服务")
         
         return True, hysteria_port
         
     except Exception as e:
-        print(f"配置失败: {e}")
+        safe_print(f"配置失败: {e}")
         return False, None
 
 def create_web_masquerade(base_dir):
@@ -853,7 +853,7 @@ def generate_self_signed_cert(base_dir, domain):
     # 确保域名不为空，如果为空则使用默认值
     if not domain or not domain.strip():
         domain = "localhost"
-        print("警告: 域名为空，使用localhost作为证书通用名")
+        safe_print("警告: 域名为空，使用localhost作为证书通用名")
     
     try:
         # 生成更安全的证书
@@ -873,7 +873,7 @@ def generate_self_signed_cert(base_dir, domain):
         
         return cert_path, key_path
     except Exception as e:
-        print(f"生成证书失败: {e}")
+        safe_print(f"生成证书失败: {e}")
         sys.exit(1)
 
 def get_real_certificate(base_dir, domain, email="admin@example.com"):
@@ -883,7 +883,7 @@ def get_real_certificate(base_dir, domain, email="admin@example.com"):
     try:
         # 检查是否已安装certbot
         if not shutil.which('certbot'):
-            print("正在安装certbot...")
+            safe_print("正在安装certbot...")
             if platform.system().lower() == 'linux':
                 # Ubuntu/Debian
                 if shutil.which('apt'):
@@ -895,14 +895,14 @@ def get_real_certificate(base_dir, domain, email="admin@example.com"):
                 elif shutil.which('dnf'):
                     subprocess.run(['sudo', 'dnf', 'install', '-y', 'certbot'], check=True)
                 else:
-                    print("无法自动安装certbot，请手动安装")
+                    safe_print("无法自动安装certbot，请手动安装")
                     return None, None
             else:
-                print("请手动安装certbot")
+                safe_print("请手动安装certbot")
                 return None, None
         
         # 使用standalone模式获取证书
-        print(f"正在为域名 {domain} 获取Let's Encrypt证书...")
+        safe_print(f"正在为域名 {domain} 获取Let's Encrypt证书...")
         subprocess.run([
             'sudo', 'certbot', 'certonly',
             '--standalone',
@@ -925,12 +925,12 @@ def get_real_certificate(base_dir, domain, email="admin@example.com"):
         os.chmod(cert_path, 0o644)
         os.chmod(key_path, 0o600)
         
-        print(f"成功获取真实证书: {cert_path}")
+        safe_print(f"成功获取真实证书: {cert_path}")
         return cert_path, key_path
         
     except Exception as e:
-        print(f"获取真实证书失败: {e}")
-        print("将使用自签名证书作为备选...")
+        safe_print(f"获取真实证书失败: {e}")
+        safe_print("将使用自签名证书作为备选...")
         return None, None
 
 def create_config(base_dir, port, password, cert_path, key_path, domain, enable_web_masquerade=True, custom_web_dir=None, enable_port_hopping=False, obfs_password=None, enable_http3_masquerade=False):
@@ -992,7 +992,7 @@ def create_config(base_dir, port, password, cert_path, key_path, domain, enable_
             "listen_port": port
         }
         
-        print(f"启用端口跳跃 - 服务器监听: {port}, 客户端可用范围: {port_start}-{port_end}")
+        safe_print(f"启用端口跳跃 - 服务器监听: {port}, 客户端可用范围: {port_start}-{port_end}")
     
     # 流量混淆配置 (Salamander Obfuscation)
     if obfs_password:
@@ -1002,7 +1002,7 @@ def create_config(base_dir, port, password, cert_path, key_path, domain, enable_
                 "password": obfs_password
             }
         }
-        print(f"启用Salamander混淆 - 密码: {obfs_password}")
+        safe_print(f"启用Salamander混淆 - 密码: {obfs_password}")
     
     # HTTP/3伪装配置
     if enable_http3_masquerade:
@@ -1022,7 +1022,7 @@ def create_config(base_dir, port, password, cert_path, key_path, domain, enable_
                     "rewriteHost": True
                 }
             }
-        print("启用HTTP/3伪装 - 流量看起来像正常HTTP/3")
+        safe_print("启用HTTP/3伪装 - 流量看起来像正常HTTP/3")
     elif enable_web_masquerade and custom_web_dir and os.path.exists(custom_web_dir):
         config["masquerade"] = {
             "type": "file",
@@ -1156,18 +1156,18 @@ fi
 
 def delete_hysteria2():
     """完整删除Hysteria2安装的5步流程"""
-    print("开始完整删除Hysteria2...")
-    print("删除流程: 停止服务 → 清理iptables → 清理nginx → 删除目录 → 清理服务")
+    safe_print("开始完整删除Hysteria2...")
+    safe_print("删除流程: 停止服务 → 清理iptables → 清理nginx → 删除目录 → 清理服务")
     
     home = get_user_home()
     base_dir = f"{home}/.hysteria2"
     
     if not os.path.exists(base_dir):
-        print("Hysteria2 未安装或已被删除")
+        safe_print("Hysteria2 未安装或已被删除")
         return True
     
     # 1. 停止Hysteria2服务
-    print("\n步骤1: 停止Hysteria2服务")
+    safe_print("\n步骤1: 停止Hysteria2服务")
     try:
         pid_file = f"{base_dir}/hysteria.pid"
         
@@ -1179,18 +1179,18 @@ def delete_hysteria2():
                     try:
                         os.kill(int(pid), 15)  # SIGTERM
                         time.sleep(2)
-                        print(f"已停止Hysteria2进程 (PID: {pid})")
+                        safe_print(f"已停止Hysteria2进程 (PID: {pid})")
                     except ProcessLookupError:
-                        print("进程已不存在")
+                        safe_print("进程已不存在")
                     except Exception as e:
-                        print(f"停止进程失败: {e}")
+                        safe_print(f"停止进程失败: {e}")
                         try:
                             os.kill(int(pid), 9)  # SIGKILL
-                            print("强制终止进程成功")
+                            safe_print("强制终止进程成功")
                         except:
                             pass
             except Exception as e:
-                print(f"读取PID文件失败: {e}")
+                safe_print(f"读取PID文件失败: {e}")
         
         # 查找并停止所有hysteria进程
         try:
@@ -1200,7 +1200,7 @@ def delete_hysteria2():
                 for pid in pids:
                     try:
                         subprocess.run(['sudo', 'kill', '-15', pid], check=True)
-                        print(f"已停止hysteria进程: {pid}")
+                        safe_print(f"已停止hysteria进程: {pid}")
                     except:
                         try:
                             subprocess.run(['sudo', 'kill', '-9', pid], check=True)
@@ -1210,10 +1210,10 @@ def delete_hysteria2():
             pass
             
     except Exception as e:
-        print(f"停止服务失败: {e}")
+        safe_print(f"停止服务失败: {e}")
     
     # 2. 清理iptables规则
-    print("\n步骤2: 清理iptables规则")
+    safe_print("\n步骤2: 清理iptables规则")
     try:
         port_ranges = []
         
@@ -1233,7 +1233,7 @@ def delete_hysteria2():
                     port_end = 1074
                 
                 port_ranges.append((port_start, port_end, listen_port))
-                print(f"从配置文件读取端口信息: {port_start}-{port_end} → {listen_port}")
+                safe_print(f"从配置文件读取端口信息: {port_start}-{port_end} → {listen_port}")
             except:
                 pass
     
@@ -1283,13 +1283,13 @@ def delete_hysteria2():
             except:
                 pass
         
-        print("iptables规则清理完成")
+        safe_print("iptables规则清理完成")
         
     except Exception as e:
-        print(f"清理iptables规则失败: {e}")
+        safe_print(f"清理iptables规则失败: {e}")
     
     # 3. 清理nginx配置
-    print("\n步骤3: 清理nginx配置")
+    safe_print("\n步骤3: 清理nginx配置")
     try:
         # 清理nginx配置文件
         nginx_conf_files = [
@@ -1320,7 +1320,7 @@ def delete_hysteria2():
                     pass
         
         if removed_files:
-            print(f"已删除nginx配置文件: {', '.join(removed_files)}")
+            safe_print(f"已删除nginx配置文件: {', '.join(removed_files)}")
         
         # 恢复nginx默认Web目录
         nginx_web_dirs = ["/var/www/html", "/usr/share/nginx/html"]
@@ -1330,7 +1330,7 @@ def delete_hysteria2():
                 if os.path.exists(backup_file):
                     try:
                         subprocess.run(['sudo', 'cp', backup_file, f"{web_dir}/index.html"], check=True)
-                        print(f"恢复nginx默认页面: {web_dir}")
+                        safe_print(f"恢复nginx默认页面: {web_dir}")
                     except:
                         pass
         
@@ -1339,29 +1339,29 @@ def delete_hysteria2():
             test_result = subprocess.run(['sudo', 'nginx', '-t'], capture_output=True, text=True)
             if test_result.returncode == 0:
                 subprocess.run(['sudo', 'systemctl', 'reload', 'nginx'], check=True)
-                print("nginx配置已重新加载")
+                safe_print("nginx配置已重新加载")
             else:
-                print(f"nginx配置测试失败: {test_result.stderr}")
+                safe_print(f"nginx配置测试失败: {test_result.stderr}")
         except:
-            print("nginx重新加载失败")
+            safe_print("nginx重新加载失败")
                 
     except Exception as e:
-        print(f"清理nginx配置失败: {e}")
+        safe_print(f"清理nginx配置失败: {e}")
     
     # 4. 删除安装目录
-    print("\n步骤4: 删除安装目录")
+    safe_print("\n步骤4: 删除安装目录")
     try:
         if os.path.exists(base_dir):
             shutil.rmtree(base_dir)
-            print(f"已删除安装目录: {base_dir}")
+            safe_print(f"已删除安装目录: {base_dir}")
         else:
-            print("安装目录不存在")
+            safe_print("安装目录不存在")
         
     except Exception as e:
-        print(f"删除安装目录失败: {e}")
+        safe_print(f"删除安装目录失败: {e}")
     
     # 5. 清理系统服务（如果存在）
-    print("\n步骤5: 清理系统服务")
+    safe_print("\n步骤5: 清理系统服务")
     try:
         service_files = [
             "/etc/systemd/system/hysteria2.service",
@@ -1374,7 +1374,7 @@ def delete_hysteria2():
                     subprocess.run(['sudo', 'systemctl', 'stop', 'hysteria2'], check=False)
                     subprocess.run(['sudo', 'systemctl', 'disable', 'hysteria2'], check=False)
                     subprocess.run(['sudo', 'rm', '-f', service_file], check=True)
-                    print(f"已删除系统服务: {service_file}")
+                    safe_print(f"已删除系统服务: {service_file}")
                 except:
                     pass
         
@@ -1385,9 +1385,9 @@ def delete_hysteria2():
             pass
             
     except Exception as e:
-        print(f"清理系统服务失败: {e}")
+        safe_print(f"清理系统服务失败: {e}")
     
-    print(f"""
+    safe_print(f"""
 Hysteria2完全删除完成！
 
 已清理的内容:
@@ -1414,7 +1414,7 @@ def show_status():
     base_dir = f"{home}/.hysteria2"
     
     if not os.path.exists(base_dir):
-        print("Hysteria2 未安装")
+        safe_print("Hysteria2 未安装")
         return
     
     # 检查服务状态
@@ -1424,13 +1424,13 @@ def show_status():
             with open(pid_file, 'r') as f:
                 pid = f.read().strip()
             if os.path.exists(f"/proc/{pid}"):
-                print(f"服务状态: 运行中 (PID: {pid})")
+                safe_print(f"服务状态: 运行中 (PID: {pid})")
             else:
-                print("服务状态: 已停止")
+                safe_print("服务状态: 已停止")
         except:
-            print("服务状态: 未知")
+            safe_print("服务状态: 未知")
     else:
-        print("服务状态: 未运行")
+        safe_print("服务状态: 未运行")
     
     # 显示配置信息
     config_path = f"{base_dir}/config/config.json"
@@ -1438,30 +1438,30 @@ def show_status():
         try:
             with open(config_path, 'r') as f:
                 config = json.load(f)
-            print("\n配置信息:")
-            print(f"监听端口: {config['listen']}")
-            print(f"认证方式: {config['auth']['type']}")
+            safe_print("\n配置信息:")
+            safe_print(f"监听端口: {config['listen']}")
+            safe_print(f"认证方式: {config['auth']['type']}")
             if 'bandwidth' in config:
-                print(f"上行带宽: {config['bandwidth']['up']}")
-                print(f"下行带宽: {config['bandwidth']['down']}")
+                safe_print(f"上行带宽: {config['bandwidth']['up']}")
+                safe_print(f"下行带宽: {config['bandwidth']['down']}")
         except:
-            print("无法读取配置文件")
+            safe_print("无法读取配置文件")
     
     # 显示日志
     log_path = f"{base_dir}/logs/hysteria.log"
     if os.path.exists(log_path):
-        print("\n最近日志:")
+        safe_print("\n最近日志:")
         try:
             with open(log_path, 'r') as f:
                 logs = f.readlines()
                 for line in logs[-10:]:  # 显示最后10行
                     print(line.strip())
         except:
-            print("无法读取日志文件")
+            safe_print("无法读取日志文件")
 
 def start_service(start_script, port, base_dir):
     """启动服务并等待服务成功运行"""
-    print(f"正在启动 Hysteria2 服务...")
+    safe_print(f"正在启动 Hysteria2 服务...")
     pid_file = f"{base_dir}/hysteria.pid"
     log_file = f"{base_dir}/logs/hysteria.log"
     
@@ -1473,34 +1473,34 @@ def start_service(start_script, port, base_dir):
         for i in range(10):
             # 检查PID文件和进程
             if check_process_running(pid_file):
-                print(f"服务进程已启动")
+                safe_print(f"服务进程已启动")
                 time.sleep(2)  # 给服务额外时间初始化
                 break
             time.sleep(1)
-            print(f"等待服务启动... ({i+1}秒)")
+            safe_print(f"等待服务启动... ({i+1}秒)")
         
         # 检查日志文件是否存在且有内容
         if os.path.exists(log_file) and os.path.getsize(log_file) > 0:
             with open(log_file, 'r') as f:
                 log_content = f.read()
                 if "server up and running" in log_content:
-                    print("日志显示服务已正常启动")
+                    safe_print("日志显示服务已正常启动")
                     return True
         
         # 检查端口是否在监听
         if is_port_listening(port):
-            print(f"检测到端口 {port} 已开放，服务应已启动")
+            safe_print(f"检测到端口 {port} 已开放，服务应已启动")
             return True
             
-        print("警告: 无法确认服务是否成功启动，请检查日志文件")
+        safe_print("警告: 无法确认服务是否成功启动，请检查日志文件")
         return True  # 即使不确定也返回True，避免误报
     except Exception as e:
-        print(f"启动服务失败: {e}")
+        safe_print(f"启动服务失败: {e}")
         return False
 
 def show_help():
     """显示帮助信息"""
-    print("""
+    safe_print("""
 Hysteria2 一键部署工具 (防墙增强版)
 
 重要说明：Hysteria2基于UDP/QUIC协议，支持端口跳跃、混淆和HTTP/3伪装！
@@ -1662,7 +1662,7 @@ def create_nginx_masquerade(base_dir, domain, web_dir):
 
 def setup_dual_port_masquerade(base_dir, domain, web_dir, cert_path, key_path):
     """设置双端口伪装：TCP用于Web，UDP用于Hysteria2"""
-    print("正在设置双端口伪装方案...")
+    safe_print("正在设置双端口伪装方案...")
     
     # 检查是否安装了nginx
     try:
@@ -1672,46 +1672,46 @@ def setup_dual_port_masquerade(base_dir, domain, web_dir, cert_path, key_path):
         has_nginx = False
     
     if not has_nginx:
-        print("正在安装nginx...")
+        safe_print("正在安装nginx...")
         
         # 获取系统架构信息
         arch = platform.machine().lower()
         system = platform.system().lower()
-        print(f"检测到系统: {system}, 架构: {arch}")
+        safe_print(f"检测到系统: {system}, 架构: {arch}")
         
         try:
             # 尝试安装nginx（包管理器会自动处理架构）
             if shutil.which('apt'):
-                print("使用APT包管理器安装nginx...")
+                safe_print("使用APT包管理器安装nginx...")
                 subprocess.run(['sudo', 'apt', 'update'], check=True)
                 subprocess.run(['sudo', 'apt', 'install', '-y', 'nginx'], check=True)
             elif shutil.which('yum'):
-                print("使用YUM包管理器安装nginx...")
+                safe_print("使用YUM包管理器安装nginx...")
                 subprocess.run(['sudo', 'yum', 'install', '-y', 'epel-release'], check=True)  # EPEL for nginx
                 subprocess.run(['sudo', 'yum', 'install', '-y', 'nginx'], check=True)
             elif shutil.which('dnf'):
-                print("使用DNF包管理器安装nginx...")
+                safe_print("使用DNF包管理器安装nginx...")
                 subprocess.run(['sudo', 'dnf', 'install', '-y', 'nginx'], check=True)
             elif shutil.which('pacman'):
-                print("使用Pacman包管理器安装nginx...")
+                safe_print("使用Pacman包管理器安装nginx...")
                 subprocess.run(['sudo', 'pacman', '-S', '--noconfirm', 'nginx'], check=True)
             elif shutil.which('zypper'):
-                print("使用Zypper包管理器安装nginx...")
+                safe_print("使用Zypper包管理器安装nginx...")
                 subprocess.run(['sudo', 'zypper', 'install', '-y', 'nginx'], check=True)
             else:
-                print("无法识别包管理器，尝试手动下载nginx...")
-                print("支持的架构: x86_64, aarch64, i386")
-                print("请手动安装nginx: https://nginx.org/en/download.html")
+                safe_print("无法识别包管理器，尝试手动下载nginx...")
+                safe_print("支持的架构: x86_64, aarch64, i386")
+                safe_print("请手动安装nginx: https://nginx.org/en/download.html")
                 return False
                 
-            print("nginx安装完成")
+            safe_print("nginx安装完成")
         except Exception as e:
-            print(f"nginx安装失败: {e}")
-            print("请尝试手动安装: sudo apt install nginx 或 sudo yum install nginx")
+            safe_print(f"nginx安装失败: {e}")
+            safe_print("请尝试手动安装: sudo apt install nginx 或 sudo yum install nginx")
             return False
     
     # 简化方案：直接覆盖nginx默认Web目录的文件
-    print("使用简化方案：直接覆盖nginx默认Web目录")
+    safe_print("使用简化方案：直接覆盖nginx默认Web目录")
     
     # 检测nginx默认Web目录
     nginx_web_dirs = [
@@ -1731,19 +1731,19 @@ def setup_dual_port_masquerade(base_dir, domain, web_dir, cert_path, key_path):
         nginx_web_dir = "/var/www/html"
         try:
             subprocess.run(['sudo', 'mkdir', '-p', nginx_web_dir], check=True)
-            print(f"创建Web目录: {nginx_web_dir}")
+            safe_print(f"创建Web目录: {nginx_web_dir}")
         except Exception as e:
-            print(f"创建Web目录失败: {e}")
+            safe_print(f"创建Web目录失败: {e}")
             return False
     
-    print(f"检测到nginx Web目录: {nginx_web_dir}")
+    safe_print(f"检测到nginx Web目录: {nginx_web_dir}")
     
     try:
         # 备份原有文件
         try:
             if os.path.exists(f"{nginx_web_dir}/index.html"):
                 subprocess.run(['sudo', 'cp', f'{nginx_web_dir}/index.html', f'{nginx_web_dir}/index.html.backup'], check=True)
-                print("备份原有index.html")
+                safe_print("备份原有index.html")
         except:
             pass
         
@@ -1752,25 +1752,25 @@ def setup_dual_port_masquerade(base_dir, domain, web_dir, cert_path, key_path):
             # 使用find命令复制文件，避免shell通配符问题
             try:
                 subprocess.run(['sudo', 'find', web_dir, '-type', 'f', '-exec', 'cp', '{}', nginx_web_dir, ';'], check=True)
-                print(f"伪装文件已复制到: {nginx_web_dir}")
+                safe_print(f"伪装文件已复制到: {nginx_web_dir}")
             except:
                 # 备选方案：逐个复制文件
                 for file in os.listdir(web_dir):
                     src_file = os.path.join(web_dir, file)
                     if os.path.isfile(src_file):
                         subprocess.run(['sudo', 'cp', src_file, nginx_web_dir], check=True)
-            print(f"伪装文件已复制到: {nginx_web_dir}")
+            safe_print(f"伪装文件已复制到: {nginx_web_dir}")
         else:
-            print(f"原Web目录不存在，直接在nginx目录创建伪装文件...")
+            safe_print(f"原Web目录不存在，直接在nginx目录创建伪装文件...")
             create_web_files_in_directory(nginx_web_dir)
         
         # 设置正确的权限
         set_nginx_permissions(nginx_web_dir)
         
-        print(f"设置权限完成: {nginx_web_dir}")
+        safe_print(f"设置权限完成: {nginx_web_dir}")
         
     except Exception as e:
-        print(f"文件复制失败: {e}")
+        safe_print(f"文件复制失败: {e}")
         return False
     
     # 简化nginx配置：只配置SSL证书，使用默认Web目录
@@ -1815,26 +1815,26 @@ server {{
             subprocess.run(['sudo', 'cp', tmp.name, ssl_conf_file], check=True)
             os.unlink(tmp.name)
             
-        print(f"创建SSL配置: {ssl_conf_file}")
+        safe_print(f"创建SSL配置: {ssl_conf_file}")
         
         # 测试配置
         test_result = subprocess.run(['sudo', 'nginx', '-t'], capture_output=True, text=True)
         if test_result.returncode != 0:
-            print(f"nginx配置测试失败: {test_result.stderr}")
+            safe_print(f"nginx配置测试失败: {test_result.stderr}")
             return False
         
         # 启动nginx
         subprocess.run(['sudo', 'systemctl', 'restart', 'nginx'], check=True)
         subprocess.run(['sudo', 'systemctl', 'enable', 'nginx'], check=True)
         
-        print("nginx配置成功！")
-        print(f"Web伪装已生效: https://{domain}")
-        print("HTTP 80端口会显示默认页面")
-        print("HTTPS 443端口会显示我们的伪装页面")
+        safe_print("nginx配置成功！")
+        safe_print(f"Web伪装已生效: https://{domain}")
+        safe_print("HTTP 80端口会显示默认页面")
+        safe_print("HTTPS 443端口会显示我们的伪装页面")
         return True
         
     except Exception as e:
-        print(f"nginx配置失败: {e}")
+        safe_print(f"nginx配置失败: {e}")
         return False
 
 def show_client_setup(config_link, server_address, port, password, use_real_cert, enable_port_hopping=False, obfs_password=None, enable_http3_masquerade=False):
@@ -1907,13 +1907,13 @@ def main():
         base_dir = f"{home}/.hysteria2"
         
         if not os.path.exists(base_dir):
-            print("Hysteria2 未安装，请先运行 install 命令")
+            safe_print("Hysteria2 未安装，请先运行 install 命令")
             sys.exit(1)
         
         # 获取配置信息
         config_path = f"{base_dir}/config/config.json"
         if not os.path.exists(config_path):
-            print("配置文件不存在")
+            safe_print("配置文件不存在")
             sys.exit(1)
         
         with open(config_path, 'r') as f:
@@ -1924,11 +1924,11 @@ def main():
         cert_path = config['tls']['cert']
         key_path = config['tls']['key']
         
-        print(f"正在为域名 {domain} 设置nginx Web伪装...")
+        safe_print(f"正在为域名 {domain} 设置nginx Web伪装...")
         success = setup_dual_port_masquerade(base_dir, domain, web_dir, cert_path, key_path)
         
         if success:
-            print(f"""
+            safe_print(f"""
 nginx设置成功！
 
 现在你有：
@@ -1943,20 +1943,20 @@ curl -k https://{domain}  # 如果使用自签名证书
 重要: 确保防火墙已开放UDP端口用于Hysteria2！
 """)
         else:
-            print("nginx设置失败，请检查错误信息")
+            safe_print("nginx设置失败，请检查错误信息")
     elif args.command == 'client':
         # 显示客户端连接指南
         home = get_user_home()
         base_dir = f"{home}/.hysteria2"
         
         if not os.path.exists(base_dir):
-            print("Hysteria2 未安装，请先运行 install 命令")
+            safe_print("Hysteria2 未安装，请先运行 install 命令")
             sys.exit(1)
         
         # 获取配置信息
         config_path = f"{base_dir}/config/config.json"
         if not os.path.exists(config_path):
-            print("配置文件不存在")
+            safe_print("配置文件不存在")
             sys.exit(1)
         
         with open(config_path, 'r') as f:
@@ -1979,12 +1979,12 @@ curl -k https://{domain}  # 如果使用自签名证书
         base_dir = f"{home}/.hysteria2"
         
         if not os.path.exists(base_dir):
-            print("Hysteria2 未安装，请先运行 install 命令")
+            safe_print("Hysteria2 未安装，请先运行 install 命令")
             sys.exit(1)
         
         domain = args.domain if args.domain else get_ip_address()
         
-        print("正在修复nginx配置 - 使用简化方案...")
+        safe_print("正在修复nginx配置 - 使用简化方案...")
         
         # 1. 检测nginx默认Web目录
         nginx_web_dirs = [
@@ -2003,31 +2003,31 @@ curl -k https://{domain}  # 如果使用自签名证书
             nginx_web_dir = "/var/www/html"
             try:
                 subprocess.run(['sudo', 'mkdir', '-p', nginx_web_dir], check=True)
-                print(f"创建Web目录: {nginx_web_dir}")
+                safe_print(f"创建Web目录: {nginx_web_dir}")
             except Exception as e:
-                print(f"创建Web目录失败: {e}")
+                safe_print(f"创建Web目录失败: {e}")
                 sys.exit(1)
         
-        print(f"检测到nginx Web目录: {nginx_web_dir}")
+        safe_print(f"检测到nginx Web目录: {nginx_web_dir}")
         
         # 2. 备份并复制伪装文件
         try:
             # 备份原有文件
             if os.path.exists(f"{nginx_web_dir}/index.html"):
                 subprocess.run(['sudo', 'cp', f'{nginx_web_dir}/index.html', f'{nginx_web_dir}/index.html.backup'], check=True)
-                print("备份原有index.html")
+                safe_print("备份原有index.html")
             
             # 直接在nginx目录创建我们的伪装文件
-            print("正在创建伪装网站文件...")
+            safe_print("正在创建伪装网站文件...")
             create_web_files_in_directory(nginx_web_dir)
             
             # 设置权限
             set_nginx_permissions(nginx_web_dir)
             
-            print(f"伪装文件已创建并设置权限: {nginx_web_dir}")
+            safe_print(f"伪装文件已创建并设置权限: {nginx_web_dir}")
             
         except Exception as e:
-            print(f"创建伪装文件失败: {e}")
+            safe_print(f"创建伪装文件失败: {e}")
             sys.exit(1)
         
         # 3. 确保nginx SSL配置正确
@@ -2036,7 +2036,7 @@ curl -k https://{domain}  # 如果使用自签名证书
             key_path = f"{base_dir}/cert/server.key"
             
             if not os.path.exists(cert_path) or not os.path.exists(key_path):
-                print("证书文件不存在，重新生成...")
+                safe_print("证书文件不存在，重新生成...")
                 cert_path, key_path = generate_self_signed_cert(base_dir, domain)
             
             # 创建简化的SSL配置
@@ -2085,21 +2085,21 @@ server {{
                 subprocess.run(['sudo', 'cp', tmp.name, ssl_conf_file], check=True)
                 os.unlink(tmp.name)
                 
-            print(f"SSL配置已更新: {ssl_conf_file}")
+            safe_print(f"SSL配置已更新: {ssl_conf_file}")
             
         except Exception as e:
-            print(f"SSL配置更新失败: {e}")
+            safe_print(f"SSL配置更新失败: {e}")
         
         # 4. 测试并重新加载nginx
         try:
             test_result = subprocess.run(['sudo', 'nginx', '-t'], capture_output=True, text=True)
             if test_result.returncode != 0:
-                print(f"nginx配置测试失败: {test_result.stderr}")
+                safe_print(f"nginx配置测试失败: {test_result.stderr}")
             else:
                 subprocess.run(['sudo', 'systemctl', 'reload', 'nginx'], check=True)
-                print("nginx配置已重新加载")
+                safe_print("nginx配置已重新加载")
                 
-                print(f"""
+                safe_print(f"""
 修复完成！
 
 伪装网站文件已部署到: {nginx_web_dir}
@@ -2114,8 +2114,8 @@ curl -k https://{domain}  # HTTPS访问
 现在外界访问你的服务器会看到一个正常的企业网站！
 """)
         except Exception as e:
-            print(f"nginx重新加载失败: {e}")
-            print("请手动检查nginx配置: sudo nginx -t")
+            safe_print(f"nginx重新加载失败: {e}")
+            safe_print("请手动检查nginx配置: sudo nginx -t")
     elif args.command == 'install':
         # 简化一键部署
         if args.simple:
@@ -2137,7 +2137,7 @@ curl -k https://{domain}  # HTTPS访问
         
         # 一键部署逻辑
         if args.one_click:
-            print("一键部署模式 - 自动启用所有防墙功能")
+            safe_print("一键部署模式 - 自动启用所有防墙功能")
             args.port_hopping = True
             args.http3_masquerade = True
             if not args.obfs_password:
@@ -2145,9 +2145,9 @@ curl -k https://{domain}  # HTTPS访问
                 import random
                 import string
                 args.obfs_password = ''.join(random.choices(string.ascii_letters + string.digits, k=16))
-                print(f"自动生成混淆密码: {args.obfs_password}")
+                safe_print(f"自动生成混淆密码: {args.obfs_password}")
             if not args.domain and not args.use_real_cert:
-                print("建议使用 --domain 和 --use-real-cert 获取真实证书")
+                safe_print("建议使用 --domain 和 --use-real-cert 获取真实证书")
         
         # 防墙优化配置
         port = args.port if args.port else 443  # 默认使用443端口
@@ -2159,35 +2159,35 @@ curl -k https://{domain}  # HTTPS访问
         # 获取IP地址或域名
         if domain:
             server_address = domain
-            print(f"使用域名: {domain}")
+            safe_print(f"使用域名: {domain}")
             if not use_real_cert:
-                print("建议使用 --use-real-cert 参数获取真实证书以增强安全性")
+                safe_print("建议使用 --use-real-cert 参数获取真实证书以增强安全性")
         else:
             server_address = args.ip if args.ip else get_ip_address()
             if use_real_cert:
-                print("警告: 使用真实证书需要指定域名，将使用自签名证书")
+                safe_print("警告: 使用真实证书需要指定域名，将使用自签名证书")
                 use_real_cert = False
         
-        print("\n开始安装 Hysteria2（防墙增强版）...")
-        print(f"服务器地址: {server_address}")
-        print(f"端口: {port} ({'HTTPS标准端口' if port == 443 else 'HTTP标准端口' if port == 80 else '自定义端口'})")
-        print(f"证书类型: {'真实证书' if use_real_cert else '自签名证书'}")
+        safe_print("\n开始安装 Hysteria2（防墙增强版）...")
+        safe_print(f"服务器地址: {server_address}")
+        safe_print(f"端口: {port} ({'HTTPS标准端口' if port == 443 else 'HTTP标准端口' if port == 80 else '自定义端口'})")
+        safe_print(f"证书类型: {'真实证书' if use_real_cert else '自签名证书'}")
         
         # 显示启用的防墙功能
         if args.port_hopping:
-            print("端口跳跃: 启用 (动态切换端口，防封锁)")
+            safe_print("端口跳跃: 启用 (动态切换端口，防封锁)")
         if args.obfs_password:
-            print(f"Salamander混淆: 启用 (密码: {args.obfs_password})")
+            safe_print(f"Salamander混淆: 启用 (密码: {args.obfs_password})")
         if args.http3_masquerade:
-            print("HTTP/3伪装: 启用 (流量看起来像正常HTTP/3)")
+            safe_print("HTTP/3伪装: 启用 (流量看起来像正常HTTP/3)")
         
-        print(f"传输协议: UDP/QUIC")
-        print(f"防护级别: {'顶级防护' if args.port_hopping and args.obfs_password and args.http3_masquerade else '高级防护' if (args.port_hopping and args.obfs_password) or (args.obfs_password and args.http3_masquerade) else '中级防护' if args.port_hopping or args.obfs_password or args.http3_masquerade else '基础防护'}")
+        safe_print(f"传输协议: UDP/QUIC")
+        safe_print(f"防护级别: {'顶级防护' if args.port_hopping and args.obfs_password and args.http3_masquerade else '高级防护' if (args.port_hopping and args.obfs_password) or (args.obfs_password and args.http3_masquerade) else '中级防护' if args.port_hopping or args.obfs_password or args.http3_masquerade else '基础防护'}")
         
         # 检查端口
         if not check_port_available(port):
             # 检查是否是hysteria进程占用
-            print(f"检测到UDP端口 {port} 已被占用，正在分析占用进程...")
+            safe_print(f"检测到UDP端口 {port} 已被占用，正在分析占用进程...")
             
             try:
                 # 尝试用sudo检查所有进程（可以看到其他用户的进程）
@@ -2201,34 +2201,34 @@ curl -k https://{domain}  # HTTPS访问
                 
                 # 检查是否是hysteria进程
                 if f':{port}' in ss_output and 'hysteria' in ss_output:
-                    print(f"检测到Hysteria2已在UDP端口 {port} 运行")
-                    print("如需重新安装，请先运行: python3 hy2.py del")
+                    safe_print(f"检测到Hysteria2已在UDP端口 {port} 运行")
+                    safe_print("如需重新安装，请先运行: python3 hy2.py del")
                     
                     # 检查是否是当前用户的进程
                     current_user = os.getenv('USER', 'unknown')
-                    print(f"当前用户: {current_user}")
-                    print("提示: 如果是其他用户启动的Hysteria2，请切换到对应用户操作")
+                    safe_print(f"当前用户: {current_user}")
+                    safe_print("提示: 如果是其他用户启动的Hysteria2，请切换到对应用户操作")
                     sys.exit(1)
                     
                 elif f':{port}' in ss_output:
-                    print(f"UDP端口 {port} 被其他程序占用")
-                    print("占用详情:")
+                    safe_print(f"UDP端口 {port} 被其他程序占用")
+                    safe_print("占用详情:")
                     # 显示占用端口的进程
                     for line in ss_output.split('\n'):
                         if f':{port}' in line and 'udp' in line.lower():
                             print(f"  {line}")
-                    print(f"解决方案: 使用其他端口，如: python3 hy2.py install --port 8443")
+                    safe_print(f"解决方案: 使用其他端口，如: python3 hy2.py install --port 8443")
                     sys.exit(1)
                 else:
-                    print(f"无法确定端口占用情况，但UDP端口 {port} 不可用")
-                    print("可能原因：权限不足或系统限制")
-                    print(f"建议: 尝试其他端口: python3 hy2.py install --port 8443")
+                    safe_print(f"无法确定端口占用情况，但UDP端口 {port} 不可用")
+                    safe_print("可能原因：权限不足或系统限制")
+                    safe_print(f"建议: 尝试其他端口: python3 hy2.py install --port 8443")
                     sys.exit(1)
                     
             except Exception as e:
-                print(f"端口检查失败: {e}")
-                print(f"UDP端口 {port} 不可用，请选择其他端口")
-                print("注意: nginx可以与Hysteria2共享443端口 (nginx用TCP，Hysteria2用UDP)")
+                safe_print(f"端口检查失败: {e}")
+                safe_print(f"UDP端口 {port} 不可用，请选择其他端口")
+                safe_print("注意: nginx可以与Hysteria2共享443端口 (nginx用TCP，Hysteria2用UDP)")
                 sys.exit(1)
         
         # 创建目录
@@ -2239,7 +2239,7 @@ curl -k https://{domain}  # HTTPS访问
         
         # 验证二进制文件
         if not verify_binary(binary_path):
-            print("错误: Hysteria2 二进制文件无效")
+            safe_print("错误: Hysteria2 二进制文件无效")
             sys.exit(1)
         
         # 创建Web伪装页面
@@ -2291,15 +2291,15 @@ curl -k https://{domain}  # HTTPS访问
         # 自动配置nginx Web伪装 (如果启用)
         nginx_success = False
         if args.auto_nginx and port == 443:
-            print("\n配置nginx Web伪装...")
+            safe_print("\n配置nginx Web伪装...")
             
             # 检测并安装nginx
             try:
                 subprocess.run(['which', 'nginx'], check=True, capture_output=True)
-                print("检测到nginx已安装")
+                safe_print("检测到nginx已安装")
                 has_nginx = True
             except:
-                print("正在安装nginx...")
+                safe_print("正在安装nginx...")
                 has_nginx = False
                 try:
                     if shutil.which('dnf'):
@@ -2314,13 +2314,13 @@ curl -k https://{domain}  # HTTPS访问
                         subprocess.run(['sudo', 'apt', 'install', '-y', 'nginx'], check=True)
                         has_nginx = True
                     else:
-                        print("无法自动安装nginx，跳过Web伪装配置")
+                        safe_print("无法自动安装nginx，跳过Web伪装配置")
                         has_nginx = False
                     
                     if has_nginx:
-                        print("nginx安装完成")
+                        safe_print("nginx安装完成")
                 except Exception as e:
-                    print(f"nginx安装失败: {e}")
+                    safe_print(f"nginx安装失败: {e}")
                     has_nginx = False
             
             # 配置nginx
@@ -2330,19 +2330,19 @@ curl -k https://{domain}  # HTTPS访问
                     success = setup_dual_port_masquerade(base_dir, server_address, web_dir, cert_path, key_path)
                     if success:
                         nginx_success = True
-                        print("nginx Web伪装配置成功！")
-                        print("TCP 443端口: 显示正常HTTPS网站")
-                        print("UDP 443端口: Hysteria2代理服务")
-                        print("重要: 防火墙需要同时开放TCP和UDP 443端口")
+                        safe_print("nginx Web伪装配置成功！")
+                        safe_print("TCP 443端口: 显示正常HTTPS网站")
+                        safe_print("UDP 443端口: Hysteria2代理服务")
+                        safe_print("重要: 防火墙需要同时开放TCP和UDP 443端口")
                     else:
-                        print("nginx配置失败，跳过Web伪装")
+                        safe_print("nginx配置失败，跳过Web伪装")
                         nginx_success = False
                 except Exception as e:
-                    print(f"nginx配置异常: {e}")
+                    safe_print(f"nginx配置异常: {e}")
                     nginx_success = False
         
         if not nginx_success and port == 443:
-            print("nginx未自动配置，可以稍后手动运行: python3 hy2.py fix")
+            safe_print("nginx未自动配置，可以稍后手动运行: python3 hy2.py fix")
         
         # 生成客户端配置链接
         insecure_param = "0" if use_real_cert else "1"
@@ -2357,7 +2357,7 @@ curl -k https://{domain}  # HTTPS访问
         
         config_link = f"hysteria2://{urllib.parse.quote(password)}@{server_address}:{port}?{'&'.join(params)}"
         
-        print(f"""
+        safe_print(f"""
 Hysteria2 防墙增强版安装成功！
 
 安装信息:
@@ -2437,21 +2437,21 @@ UDP测试: 使用客户端连接验证Hysteria2服务
         # 显示客户端连接指南
         show_client_setup(config_link, server_address, port, password, use_real_cert, args.port_hopping, args.obfs_password, args.http3_masquerade)
     else:
-        print(f"未知命令: {args.command}")
+        safe_print(f"未知命令: {args.command}")
         show_help()
         sys.exit(1)
 
 def setup_port_hopping_iptables(port_start, port_end, listen_port):
     """配置iptables实现端口跳跃"""
     try:
-        print(f"配置iptables端口跳跃...")
-        print(f"端口范围: {port_start}-{port_end} -> {listen_port}")
+        safe_print(f"配置iptables端口跳跃...")
+        safe_print(f"端口范围: {port_start}-{port_end} -> {listen_port}")
         
         # 检查iptables是否可用
         try:
             subprocess.run(['iptables', '--version'], check=True, capture_output=True)
         except:
-            print("iptables不可用，跳过端口跳跃配置")
+            safe_print("iptables不可用，跳过端口跳跃配置")
             return False
         
         # 清理可能存在的旧规则
@@ -2525,15 +2525,15 @@ def setup_port_hopping_iptables(port_start, port_end, listen_port):
             except:
                 pass
         
-        print(f"ptables端口跳跃配置成功")
-        print(f"客户端可连接端口范围: {port_start}-{port_end}")
-        print(f"服务器实际监听端口: {listen_port}")
+        safe_print(f"ptables端口跳跃配置成功")
+        safe_print(f"客户端可连接端口范围: {port_start}-{port_end}")
+        safe_print(f"服务器实际监听端口: {listen_port}")
         
         return True
         
     except Exception as e:
-        print(f"iptables配置失败: {e}")
-        print("端口跳跃功能可能无法正常工作")
+        safe_print(f"iptables配置失败: {e}")
+        safe_print("端口跳跃功能可能无法正常工作")
         return False
 
 def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F#WE", enable_real_cert=False, domain=None, email="admin@example.com", port_range=None, enable_bbr=False):
@@ -2545,16 +2545,16 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
     
     # 1. 创建目录
     base_dir = create_directories()
-    print(f"创建目录：{base_dir}")
+    safe_print(f"创建目录：{base_dir}")
     
     # 2. 下载Hysteria2
     binary_path, version = download_hysteria2(base_dir)
-    print(f"下载Hysteria2：{version}")
+    safe_print(f"下载Hysteria2：{version}")
     
     # 3. 生成混淆密码
     import random, string
     obfs_password = ''.join(random.choices(string.ascii_letters + string.digits, k=16))
-    print(f"生成混淆密码：{obfs_password}")
+    safe_print(f"生成混淆密码：{obfs_password}")
     
     # 4. 生成或获取证书
     if enable_real_cert and domain:
@@ -2563,11 +2563,11 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
             cert_path, key_path = generate_self_signed_cert(base_dir, domain)
     else:
         cert_path, key_path = generate_self_signed_cert(base_dir, server_address)
-    print(f"证书配置：{cert_path}")
+    safe_print(f"证书配置：{cert_path}")
     
     # 5. 创建Web伪装文件
     web_dir = create_web_masquerade(base_dir)
-    print(f"创建Web伪装：{web_dir}")
+    safe_print(f"创建Web伪装：{web_dir}")
     
     # 6. 创建Hysteria2配置（端口跳跃+混淆+HTTP/3伪装）
     hysteria_config = {
@@ -2607,14 +2607,14 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
     config_path = f"{base_dir}/config/config.json"
     with open(config_path, "w") as f:
         json.dump(hysteria_config, f, indent=2)
-    print(f"创建配置：{config_path}")
+    safe_print(f"创建配置：{config_path}")
     
     # 7. 配置端口跳跃（iptables）
     if port_range:
         # 使用用户指定的端口范围
         port_start, port_end = parse_port_range(port_range)
         if port_start is None or port_end is None:
-            print("端口范围解析失败，使用默认范围")
+            safe_print("端口范围解析失败，使用默认范围")
             port_start = max(1024, port - 25)
             port_end = min(65535, port + 25)
             if port < 1049:
@@ -2630,26 +2630,26 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
     
     success = setup_port_hopping_iptables(port_start, port_end, port)
     if success:
-        print(f"端口跳跃：{port_start}-{port_end} → {port}")
+        safe_print(f"端口跳跃：{port_start}-{port_end} → {port}")
     
     # 8. BBR优化（如果启用）
     if enable_bbr:
         bbr_success = enable_bbr_optimization()
         if bbr_success:
-            print("BBR拥塞控制优化已启用")
+            safe_print("BBR拥塞控制优化已启用")
         else:
-            print("BBR优化失败，但不影响主要功能")
+            safe_print("BBR优化失败，但不影响主要功能")
     
     # 9. 创建并启动Hysteria2服务
     start_script = create_service_script(base_dir, binary_path, config_path, port)
     service_started = start_service(start_script, port, base_dir)
     if service_started:
-        print(f"Hysteria2服务启动成功")
+        safe_print(f"Hysteria2服务启动成功")
     
     # 10. 配置nginx Web伪装
     nginx_success = setup_nginx_web_masquerade(base_dir, server_address, web_dir, cert_path, key_path, port)
     if nginx_success:
-        print(f"nginx Web伪装配置成功")
+        safe_print(f"nginx Web伪装配置成功")
     
     # 11. 生成客户端配置
     insecure = "1" if not enable_real_cert else "0"
@@ -2698,7 +2698,7 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
         }
         
         # 生成多端口配置（v2rayN和Clash使用相同的端口列表）
-        print(f"\n 生成多端口配置文件...")
+        safe_print(f"\n 生成多端口配置文件...")
         
         # 计算端口范围和选择端口
         import random
@@ -2717,7 +2717,7 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
         subscription_file, subscription_plain_file, _ = generate_multi_port_subscription(
             server_address, password, obfs_password, port_start, port_end, base_dir, num_configs=100
         )
-        print(f"已生成 {num_ports} 个端口的配置节点")
+        safe_print(f"已生成 {num_ports} 个端口的配置节点")
         
         # 使用统一输出函数
         show_final_summary(
@@ -2736,7 +2736,7 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
         config_file = f"{base_dir}/client-config.json"
         with open(config_file, 'w') as f:
             json.dump(port_hopping_config, f, indent=2)
-        print(f"端口跳跃JSON配置已保存到：{config_file}")
+        safe_print(f"端口跳跃JSON配置已保存到：{config_file}")
         
         # 生成v2rayN兼容配置（单一端口，因为v2rayN不支持端口跳跃）
         v2rayn_config = f"""# Hysteria2 v2rayN兼容配置 - 单一端口版本
@@ -2914,10 +2914,10 @@ http:
         with open(hysteria_client_hopping_file, 'w', encoding='utf-8') as f:
             f.write(hysteria_client_hopping_config)
             
-        print(f"v2rayN配置已保存到：{v2rayn_file}")
-        print(f"Clash配置已保存到：{clash_file}")
-        print(f"官方客户端配置已保存到：{hysteria_official_file}")
-        print(f"客户端端口跳跃配置已保存到：{hysteria_client_hopping_file}")
+        safe_print(f"v2rayN配置已保存到：{v2rayn_file}")
+        safe_print(f"Clash配置已保存到：{clash_file}")
+        safe_print(f"官方客户端配置已保存到：{hysteria_official_file}")
+        safe_print(f"客户端端口跳跃配置已保存到：{hysteria_client_hopping_file}")
         
         # 复制配置文件到nginx Web目录，提供下载
         setup_config_download_service(server_address, v2rayn_file, clash_file, hysteria_official_file, hysteria_client_hopping_file, subscription_file, subscription_plain_file, config_file)
@@ -2950,13 +2950,13 @@ def setup_nginx_web_masquerade(base_dir, server_address, web_dir, cert_path, key
     配置nginx Web伪装的简化版本
     """
     try:
-        print("配置nginx Web伪装...")
+        safe_print("配置nginx Web伪装...")
         
         # 1. 检查nginx是否安装
         try:
             subprocess.run(['which', 'nginx'], check=True, capture_output=True)
         except:
-            print("正在安装nginx...")
+            safe_print("正在安装nginx...")
             if shutil.which('apt'):
                 subprocess.run(['sudo', 'apt', 'update'], check=True)
                 subprocess.run(['sudo', 'apt', 'install', '-y', 'nginx'], check=True)
@@ -2964,7 +2964,7 @@ def setup_nginx_web_masquerade(base_dir, server_address, web_dir, cert_path, key
                 subprocess.run(['sudo', 'yum', 'install', '-y', 'epel-release'], check=True)
                 subprocess.run(['sudo', 'yum', 'install', '-y', 'nginx'], check=True)
             else:
-                print("无法安装nginx")
+                safe_print("无法安装nginx")
                 return False
         
         # 2. 找到nginx Web目录
@@ -2980,7 +2980,7 @@ def setup_nginx_web_masquerade(base_dir, server_address, web_dir, cert_path, key
             subprocess.run(['sudo', 'mkdir', '-p', nginx_web_dir], check=True)
         
         # 3. 复制Web文件
-        print("部署Web伪装文件...")
+        safe_print("部署Web伪装文件...")
         create_web_files_in_directory(nginx_web_dir)
         set_nginx_permissions(nginx_web_dir)
         
@@ -3026,32 +3026,32 @@ server {{
         # 6. 测试并重启nginx
         test_result = subprocess.run(['sudo', 'nginx', '-t'], capture_output=True, text=True)
         if test_result.returncode != 0:
-            print(f"nginx配置错误: {test_result.stderr}")
+            safe_print(f"nginx配置错误: {test_result.stderr}")
             return False
         
         subprocess.run(['sudo', 'systemctl', 'restart', 'nginx'], check=True)
         subprocess.run(['sudo', 'systemctl', 'enable', 'nginx'], check=True)
         
-        print("nginx Web伪装配置完成")
+        safe_print("nginx Web伪装配置完成")
         return True
         
     except Exception as e:
-        print(f"nginx配置失败: {e}")
+        safe_print(f"nginx配置失败: {e}")
         return False
 
 def enable_bbr_optimization():
     """启用BBR拥塞控制算法优化网络性能"""
     try:
-        print("正在启用BBR拥塞控制算法...")
+        safe_print("正在启用BBR拥塞控制算法...")
         
         # 检查当前拥塞控制算法
         try:
             with open('/proc/sys/net/ipv4/tcp_congestion_control', 'r') as f:
                 current_cc = f.read().strip()
-            print(f"当前拥塞控制算法: {current_cc}")
+            safe_print(f"当前拥塞控制算法: {current_cc}")
             
             if current_cc == 'bbr':
-                print("BBR已经启用")
+                safe_print("BBR已经启用")
                 return True
         except:
             pass
@@ -3060,7 +3060,7 @@ def enable_bbr_optimization():
         try:
             result = subprocess.run(['uname', '-r'], capture_output=True, text=True)
             kernel_version = result.stdout.strip()
-            print(f"内核版本: {kernel_version}")
+            safe_print(f"内核版本: {kernel_version}")
             
             # BBR需要内核版本 >= 4.9
             version_parts = kernel_version.split('.')
@@ -3068,19 +3068,19 @@ def enable_bbr_optimization():
             minor = int(version_parts[1].split('-')[0])
             
             if major < 4 or (major == 4 and minor < 9):
-                print(f"BBR需要内核版本 >= 4.9，当前版本: {kernel_version}")
-                print("建议升级内核或使用其他优化方案")
+                safe_print(f"BBR需要内核版本 >= 4.9，当前版本: {kernel_version}")
+                safe_print("建议升级内核或使用其他优化方案")
                 return False
         except:
-            print("无法检测内核版本")
+            safe_print("无法检测内核版本")
         
         # 检查BBR模块是否可用
         try:
             result = subprocess.run(['modprobe', 'tcp_bbr'], check=False, capture_output=True)
             if result.returncode == 0:
-                print("BBR模块加载成功")
+                safe_print("BBR模块加载成功")
             else:
-                print("BBR模块加载失败，可能不支持")
+                safe_print("BBR模块加载失败，可能不支持")
         except:
             pass
         
@@ -3116,25 +3116,25 @@ net.core.netdev_max_backlog = 5000
                 subprocess.run(['sudo', 'cp', tmp.name, sysctl_file], check=True)
                 os.unlink(tmp.name)
             
-            print(f"BBR配置已写入: {sysctl_file}")
+            safe_print(f"BBR配置已写入: {sysctl_file}")
         except Exception as e:
-            print(f"写入BBR配置失败: {e}")
+            safe_print(f"写入BBR配置失败: {e}")
             return False
         
         # 应用配置
         try:
             subprocess.run(['sudo', 'sysctl', '-p', sysctl_file], check=True)
-            print("BBR配置已应用")
+            safe_print("BBR配置已应用")
         except Exception as e:
-            print(f"应用BBR配置失败: {e}")
+            safe_print(f"应用BBR配置失败: {e}")
         
         # 立即启用BBR
         try:
             subprocess.run(['sudo', 'sysctl', '-w', 'net.core.default_qdisc=fq'], check=True)
             subprocess.run(['sudo', 'sysctl', '-w', 'net.ipv4.tcp_congestion_control=bbr'], check=True)
-            print("BBR已立即生效")
+            safe_print("BBR已立即生效")
         except Exception as e:
-            print(f"立即启用BBR失败: {e}")
+            safe_print(f"立即启用BBR失败: {e}")
         
         # 验证BBR是否启用
         try:
@@ -3142,33 +3142,33 @@ net.core.netdev_max_backlog = 5000
                 current_cc = f.read().strip()
             
             if current_cc == 'bbr':
-                print("BBR拥塞控制算法启用成功！")
+                safe_print("BBR拥塞控制算法启用成功！")
                 
                 # 显示可用的拥塞控制算法
                 try:
                     with open('/proc/sys/net/ipv4/tcp_available_congestion_control', 'r') as f:
                         available_cc = f.read().strip()
-                    print(f"可用算法: {available_cc}")
+                    safe_print(f"可用算法: {available_cc}")
                 except:
                     pass
                 
                 return True
             else:
-                print(f"BBR启用失败，当前算法: {current_cc}")
+                safe_print(f"BBR启用失败，当前算法: {current_cc}")
                 return False
                 
         except Exception as e:
-            print(f"验证BBR状态失败: {e}")
+            safe_print(f"验证BBR状态失败: {e}")
             return False
             
     except Exception as e:
-        print(f"BBR优化失败: {e}")
+        safe_print(f"BBR优化失败: {e}")
         return False
 
 def setup_config_download_service(server_address, v2rayn_file, clash_file, hysteria_official_file, hysteria_client_hopping_file, subscription_file, subscription_plain_file, json_file):
     """设置配置文件下载服务 - 完全自动化"""
     try:
-        print("设置配置文件下载服务...")
+        safe_print("设置配置文件下载服务...")
         
         # 获取base_dir
         base_dir = os.path.expanduser("~/.hysteria2")
@@ -3187,7 +3187,7 @@ def setup_config_download_service(server_address, v2rayn_file, clash_file, hyste
         subprocess.run(['cp', json_file, f'{config_dir}/hysteria2.json'], check=True)
         
         # 直接启动Python HTTP服务器（不使用systemd）
-        print("启动Python HTTP服务器...")
+        safe_print("启动Python HTTP服务器...")
         
         # 创建HTTP服务器脚本
         server_script = f'''#!/usr/bin/env python3
@@ -3214,10 +3214,10 @@ if __name__ == "__main__":
     PORT = 8080
     try:
         with socketserver.TCPServer(("", PORT), ConfigHandler) as httpd:
-            print(f"HTTP服务器已启动，端口: {{PORT}}")
+            safe_print(f"HTTP服务器已启动，端口: {{PORT}}")
             httpd.serve_forever()
     except Exception as e:
-        print(f"服务器启动失败: {{e}}")
+        safe_print(f"服务器启动失败: {{e}}")
         exit(1)
 '''
         
@@ -3244,17 +3244,17 @@ if __name__ == "__main__":
             result = sock.connect_ex(('127.0.0.1', 8080))
             sock.close()
             if result == 0:
-                print("Python HTTP服务器启动成功")
+                safe_print("Python HTTP服务器启动成功")
                 return True
             else:
-                print("HTTP服务器启动失败")
+                safe_print("HTTP服务器启动失败")
                 return False
         except Exception as e:
-            print(f"验证HTTP服务器失败: {e}")
+            safe_print(f"验证HTTP服务器失败: {e}")
             return False
         
     except Exception as e:
-        print(f"设置配置下载服务失败: {e}")
+        safe_print(f"设置配置下载服务失败: {e}")
         return False
 
 def parse_port_range(port_range_str):
@@ -3264,8 +3264,8 @@ def parse_port_range(port_range_str):
             return None, None
         
         if '-' not in port_range_str:
-            print(f"端口范围格式错误: {port_range_str}")
-            print("正确格式: 起始端口-结束端口，如: 28888-29999")
+            safe_print(f"端口范围格式错误: {port_range_str}")
+            safe_print("正确格式: 起始端口-结束端口，如: 28888-29999")
             return None, None
         
         start_str, end_str = port_range_str.split('-', 1)
@@ -3274,28 +3274,28 @@ def parse_port_range(port_range_str):
         
         # 验证端口范围
         if start_port < 1024 or end_port > 65535:
-            print(f"端口范围超出有效范围 (1024-65535): {start_port}-{end_port}")
+            safe_print(f"端口范围超出有效范围 (1024-65535): {start_port}-{end_port}")
             return None, None
         
         if start_port >= end_port:
-            print(f"起始端口必须小于结束端口: {start_port}-{end_port}")
+            safe_print(f"起始端口必须小于结束端口: {start_port}-{end_port}")
             return None, None
         
         if end_port - start_port > 10000:
-            print(f"端口范围过大 ({end_port - start_port} 个端口)，建议控制在10000以内")
+            safe_print(f"端口范围过大 ({end_port - start_port} 个端口)，建议控制在10000以内")
             user_input = input("是否继续? (y/n): ").lower()
             if user_input != 'y':
                 return None, None
         
-        print(f"端口范围解析成功: {start_port}-{end_port} (共 {end_port - start_port + 1} 个端口)")
+        safe_print(f"端口范围解析成功: {start_port}-{end_port} (共 {end_port - start_port + 1} 个端口)")
         return start_port, end_port
         
     except ValueError:
-        print(f"端口范围格式错误: {port_range_str}")
-        print("正确格式: 起始端口-结束端口，如: 28888-29999")
+        safe_print(f"端口范围格式错误: {port_range_str}")
+        safe_print("正确格式: 起始端口-结束端口，如: 28888-29999")
         return None, None
     except Exception as e:
-        print(f"解析端口范围失败: {e}")
+        safe_print(f"解析端口范围失败: {e}")
         return None, None
 
 def show_final_summary(server_address, port, port_range, password, obfs_password, config_link, enable_port_hopping=False, download_links=None, num_ports=None):
@@ -3304,65 +3304,65 @@ def show_final_summary(server_address, port, port_range, password, obfs_password
     
     print("\n" + "="*80)
     print("\033[36m┌──────────────────────────────────────────────────────────────────────────────┐\033[0m")
-    print("\033[36m│                            Hysteria2 部署完成！                             │\033[0m")
+    safe_print("\033[36m│                            Hysteria2 部署完成！                             │\033[0m")
     print("\033[36m└──────────────────────────────────────────────────────────────────────────────┘\033[0m")
     
     # 服务器信息
-    print("\n\033[33m服务器信息:\033[0m")
-    print(f"   服务器地址: {server_address}")
-    print(f"   监听端口: {port} (UDP)")
+    safe_print("\n\033[33m服务器信息:\033[0m")
+    safe_print(f"   服务器地址: {server_address}")
+    safe_print(f"   监听端口: {port} (UDP)")
     if enable_port_hopping and port_range:
-        print(f"   客户端端口范围: {port_range}")
-    print(f"   连接密码: {password}")
+        safe_print(f"   客户端端口范围: {port_range}")
+    safe_print(f"   连接密码: {password}")
     if obfs_password:
-        print(f"   混淆密码: {obfs_password}")
+        safe_print(f"   混淆密码: {obfs_password}")
     
     # 一键导入链接
-    print(f"\n\033[32m🔗 一键导入链接:\033[0m")
+    safe_print(f"\n\033[32m🔗 一键导入链接:\033[0m")
     print(f"   {config_link}")
     
     # 配置文件下载链接（如果有）
     if download_links:
-        print(f"\n\033[34m配置文件下载:\033[0m")
+        safe_print(f"\n\033[34m配置文件下载:\033[0m")
         for name, url in download_links.items():
             print(f"   {name}: {url}")
         
-        print(f"\n\033[33m客户端配置指南:\033[0m")
-        print("   v2rayN用户:")
-        print("     - 多端口订阅: 下载v2rayN多端口订阅 -> 添加订阅链接")
-        print("     - 手动导入: 下载多端口配置明文 -> 复制链接到v2rayN")
-        print("     - 单一端口: 下载v2rayN单一端口配置")
-        print("   Clash Meta用户:")
-        print("     - 多端口配置: 下载Clash多端口配置，包含多个端口节点")
-        print("   官方客户端用户:")
-        print("     - 使用官方客户端配置")
-        print(f"   多端口说明: 包含{num_ports}个不同端口节点，手动切换实现防封效果")
+        safe_print(f"\n\033[33m客户端配置指南:\033[0m")
+        safe_print("   v2rayN用户:")
+        safe_print("     - 多端口订阅: 下载v2rayN多端口订阅 -> 添加订阅链接")
+        safe_print("     - 手动导入: 下载多端口配置明文 -> 复制链接到v2rayN")
+        safe_print("     - 单一端口: 下载v2rayN单一端口配置")
+        safe_print("   Clash Meta用户:")
+        safe_print("     - 多端口配置: 下载Clash多端口配置，包含多个端口节点")
+        safe_print("   官方客户端用户:")
+        safe_print("     - 使用官方客户端配置")
+        safe_print(f"   多端口说明: 包含{num_ports}个不同端口节点，手动切换实现防封效果")
     
     # 防护特性
-    print(f"\n\033[35m防护特性:\033[0m")
+    safe_print(f"\n\033[35m防护特性:\033[0m")
     if enable_port_hopping:
-        print(f"   端口跳跃: {port_range} → {port} (服务器端DNAT实现)")
+        safe_print(f"   端口跳跃: {port_range} → {port} (服务器端DNAT实现)")
     if obfs_password:
-        print(f"   Salamander混淆: {obfs_password}")
-    print("   HTTP/3伪装: 模拟正常HTTP/3流量")
-    print("   nginx Web伪装: TCP端口显示正常网站")
-    print("   UDP协议: 基于QUIC/HTTP3，抗封锁能力强")
+        safe_print(f"   Salamander混淆: {obfs_password}")
+    safe_print("   HTTP/3伪装: 模拟正常HTTP/3流量")
+    safe_print("   nginx Web伪装: TCP端口显示正常网站")
+    safe_print("   UDP协议: 基于QUIC/HTTP3，抗封锁能力强")
     
     # 使用提醒
-    print(f"\n\033[31m使用提醒:\033[0m")
-    print("   Hysteria2使用UDP协议，确保防火墙已开放UDP端口")
+    safe_print(f"\n\033[31m使用提醒:\033[0m")
+    safe_print("   Hysteria2使用UDP协议，确保防火墙已开放UDP端口")
     if enable_port_hopping and port_range:
-        print(f"   端口跳跃模式：需要开放UDP端口范围 {port_range}")
+        safe_print(f"   端口跳跃模式：需要开放UDP端口范围 {port_range}")
     else:
-        print(f"   需要开放UDP端口 {port}")
-    print(f"   nginx Web伪装需要开放TCP端口 {port}")
+        safe_print(f"   需要开放UDP端口 {port}")
+    safe_print(f"   nginx Web伪装需要开放TCP端口 {port}")
     
     # 443端口地址 和 10个随机v2ray地址
-    print(f"\n\033[93m443端口连接地址:\033[0m")
+    safe_print(f"\n\033[93m443端口连接地址:\033[0m")
     hysteria_443_url = f"hysteria2://{urllib.parse.quote(password)}@{server_address}:443?insecure=1&sni={server_address}&obfs=salamander&obfs-password={urllib.parse.quote(obfs_password)}#Hysteria2-443"
     print(f"   {hysteria_443_url}")
     
-    print(f"\n\033[93m10个随机v2ray地址 (可直接复制):\033[0m")
+    safe_print(f"\n\033[93m10个随机v2ray地址 (可直接复制):\033[0m")
     random_ports = []
     random_urls = []
     if port_range and '-' in str(port_range):
@@ -3381,19 +3381,19 @@ def show_final_summary(server_address, port, port_range, password, obfs_password
         # 生成Base64订阅格式
         subscription_content = "\n".join(random_urls)
         subscription_base64 = base64.b64encode(subscription_content.encode('utf-8')).decode('utf-8')
-        print(f"\n\033[92m10个随机地址的Base64订阅:\033[0m")
+        safe_print(f"\n\033[92m10个随机地址的Base64订阅:\033[0m")
         print(f"   {subscription_base64}")
     else:
-        print("   (需要启用多端口配置才能生成随机地址)")
+        safe_print("   (需要启用多端口配置才能生成随机地址)")
     
     # 作者信息
     print("\n" + "="*80)
     print("\033[36m┌──────────────────────────────────────────────────────────────────────────────┐\033[0m")
-    print("\033[36m│                                  作者信息                                      │\033[0m")
+    safe_print("\033[36m│                                  作者信息                                      │\033[0m")
     print("\033[36m├──────────────────────────────────────────────────────────────────────────────┤\033[0m")
-    print("\033[36m│ \033[32m作者: 康康                                                  \033[36m│\033[0m")
+    safe_print("\033[36m│ \033[32m作者: 康康                                                  \033[36m│\033[0m")
     print("\033[36m│ \033[32mGithub: https://github.com/zhumengkang/                    \033[36m│\033[0m")
-    print("\033[36m│ \033[32mYouTube: https://www.youtube.com/@康康的V2Ray与Clash         \033[36m│\033[0m")
+    safe_print("\033[36m│ \033[32mYouTube: https://www.youtube.com/@康康的V2Ray与Clash         \033[36m│\033[0m")
     print("\033[36m│ \033[32mTelegram: https://t.me/+WibQp7Mww1k5MmZl                   \033[36m│\033[0m")
     print("\033[36m└──────────────────────────────────────────────────────────────────────────────┘\033[0m")
     print("="*80)
@@ -3405,13 +3405,13 @@ def show_final_summary(server_address, port, port_range, password, obfs_password
     print("\n" + ""*20)
     print("\033[32m" + "="*80 + "\033[0m")
     print("\033[32m" + "║" + " "*78 + "║" + "\033[0m")
-    print("\033[32m" + "║" + "部署完成！连接成功后即可享受高速稳定的网络体验！".center(76) + "║" + "\033[0m")
+    safe_print("\033[32m" + "║" + "部署完成！连接成功后即可享受高速稳定的网络体验！".center(76) + "║" + "\033[0m")
     print("\033[32m" + "║" + " "*78 + "║" + "\033[0m")
-    print("\033[32m" + "║" + "已创建全局管理命令，输入 'kk' 进入管理菜单".center(74) + "║" + "\033[0m")
+    safe_print("\033[32m" + "║" + "已创建全局管理命令，输入 'kk' 进入管理菜单".center(74) + "║" + "\033[0m")
     print("\033[32m" + "║" + " "*78 + "║" + "\033[0m")
-    print("\033[32m" + "║" + "菜单功能：1-查看节点 2-查看配置 3-服务状态 4-重启服务 5-查看日志 6-删除服务".center(66) + "║" + "\033[0m")
+    safe_print("\033[32m" + "║" + "菜单功能：1-查看节点 2-查看配置 3-服务状态 4-重启服务 5-查看日志 6-删除服务".center(66) + "║" + "\033[0m")
     print("\033[32m" + "║" + " "*78 + "║" + "\033[0m")
-    print("\033[32m" + "║" + "如遇问题，请联系作者获取技术支持".center(70) + "║" + "\033[0m")
+    safe_print("\033[32m" + "║" + "如遇问题，请联系作者获取技术支持".center(70) + "║" + "\033[0m")
     print("\033[32m" + "║" + " "*78 + "║" + "\033[0m")
     print("\033[32m" + "="*80 + "\033[0m")
     print(""*20 + "\n")
@@ -3748,7 +3748,7 @@ done
             with open(kk_script_path, 'w', encoding='utf-8') as f:
                 f.write(kk_script_content)
             os.chmod(kk_script_path, 0o755)
-            print(f"已创建全局命令: {kk_script_path}")
+            safe_print(f"已创建全局命令: {kk_script_path}")
         except PermissionError:
             # 如果没有权限写入/usr/local/bin，尝试写入用户目录
             user_bin = f"{home}/bin"
@@ -3757,13 +3757,13 @@ done
             with open(kk_script_path, 'w', encoding='utf-8') as f:
                 f.write(kk_script_content)
             os.chmod(kk_script_path, 0o755)
-            print(f"已创建用户命令: {kk_script_path}")
-            print(f"请确保 {user_bin} 在PATH环境变量中")
+            safe_print(f"已创建用户命令: {kk_script_path}")
+            safe_print(f"请确保 {user_bin} 在PATH环境变量中")
         
         return True
         
     except Exception as e:
-        print(f"保存全局配置失败: {e}")
+        safe_print(f"保存全局配置失败: {e}")
         return False
 
 def generate_multi_port_subscription(server_address, password, obfs_password, port_start, port_end, base_dir, num_configs=100):
@@ -3831,8 +3831,8 @@ if __name__ == "__main__":
             sys.set_int_max_str_digits(0)
         main()
     except UnicodeEncodeError as e:
-        print(f"编码错误: {e}")
-        print("正在尝试以UTF-8编码重新运行...")
+        safe_print(f"编码错误: {e}")
+        safe_print("正在尝试以UTF-8编码重新运行...")
         # 如果仍有编码问题，尝试设置环境变量后重新运行
         import locale
         try:
