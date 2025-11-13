@@ -3729,19 +3729,42 @@ if __name__ == "__main__":
     
     # 仅IPv6模式 - 不支持IPv4
     try:
+        safe_print(f"尝试绑定IPv6地址 '::', 端口: {{{{PORT}}}}")
+        
         # 创建仅IPv6服务器
         httpd = socketserver.TCPServer(('::', PORT), ConfigHandler)
         httpd.address_family = socket.AF_INET6
-        # 确保仅使用IPv6，禁用IPv4
-        httpd.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
-        safe_print(f"HTTP服务器已启动，端口: {{{{PORT}}}} (仅IPv6模式)")
         
+        # 确保仅使用IPv6，禁用IPv4
+        try:
+            httpd.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+            safe_print("✓ IPv6_V6ONLY 设置成功")
+        except Exception as sock_err:
+            safe_print(f"⚠ IPv6_V6ONLY 设置失败: {{{{sock_err}}}}")
+        
+        safe_print(f"HTTP服务器已启动，端口: {{{{PORT}}}} (仅IPv6模式)")
+        safe_print(f"绑定地址: [::]:{{{{PORT}}}}")
+        
+    except PermissionError:
+        safe_print("IPv6服务器启动失败: 权限不足")
+        safe_print("请使用 sudo 运行或选择大于1024的端口")
+        sys.exit(1)
+    except OSError as os_err:
+        if 'Address already in use' in str(os_err):
+            safe_print(f"IPv6服务器启动失败: 端口{{{{PORT}}}}已被占用")
+            safe_print(f"请检查: ss -6 -tlnp | grep :{{{{PORT}}}}")
+        elif 'Cannot assign requested address' in str(os_err):
+            safe_print("IPv6服务器启动失败: 无法绑定IPv6地址")
+            safe_print("请检查: cat /proc/sys/net/ipv6/conf/all/disable_ipv6")
+        else:
+            safe_print(f"IPv6服务器启动失败: {{{{os_err}}}}")
+        sys.exit(1)
     except Exception as e:
         safe_print(f"IPv6服务器启动失败: {{{{e}}}}")
         safe_print("请检查:")
-        safe_print("1. 系统是否支持IPv6")
-        safe_print("2. 端口是否被占用")
-        safe_print("3. IPv6是否被禁用")
+        safe_print("1. 系统是否支持IPv6: ip -6 addr show")
+        safe_print("2. IPv6是否启用: cat /proc/sys/net/ipv6/conf/all/disable_ipv6")
+        safe_print(f"3. 端口是否可用: ss -6 -tlnp | grep :{{{{PORT}}}}")
         sys.exit(1)
     
     try:
@@ -3804,41 +3827,69 @@ fi
         
         safe_print("启动Python HTTP服务器...")
         
+        safe_print("启动Python HTTP服务器...")
+        
         # 在后台启动HTTP服务器
-        server_process = subprocess.Popen(['python3', server_file], 
-                                        cwd=base_dir, 
-                                        stdout=subprocess.PIPE, 
-                                        stderr=subprocess.PIPE)
-        
-        # 等待服务启动
-        time.sleep(3)
-        
-        # 验证IPv6服务是否启动
-        server_running = False
         try:
-            import socket
-            sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
-            sock.settimeout(3)
-            result = sock.connect_ex(('::1', server_port))
-            sock.close()
-            if result == 0:
-                safe_print(f"✓ HTTP服务器已启动，端口: {server_port} (仅IPv6模式)")
-                server_running = True
-            else:
-                safe_print(f"✗ IPv6连接测试失败，连接码: {result}")
-        except Exception as e:
-            safe_print(f"✗ IPv6连接测试异常: {e}")
-        
-        if not server_running:
-            # 检查进程是否还在运行
+            server_process = subprocess.Popen(['python3', server_file], 
+                                            cwd=base_dir, 
+                                            stdout=subprocess.PIPE, 
+                                            stderr=subprocess.PIPE)
+            
+            # 等待服务启动
+            time.sleep(5)  # 增加等待时间
+            
+            # 检查进程状态
             if server_process.poll() is not None:
                 stdout, stderr = server_process.communicate()
-                safe_print("HTTP服务器启动失败")
+                safe_print("✗ HTTP服务器进程异常退出")
+                if stdout:
+                    safe_print(f"输出: {stdout.decode('utf-8', 'ignore')}")
                 if stderr:
-                    safe_print(f"错误信息: {stderr.decode('utf-8', 'ignore')}")
+                    safe_print(f"错误: {stderr.decode('utf-8', 'ignore')}")
                 return False
-            else:
-                safe_print(f"HTTP服务器已启动，端口: {server_port}")
+            
+            safe_print("检查IPv6端口状态...")
+            
+            # 使用ss命令检查端口监听
+            try:
+                port_check = subprocess.run(['ss', '-6', '-tlnp'], 
+                                          capture_output=True, text=True, timeout=5)
+                if port_check.returncode == 0:
+                    port_lines = [line for line in port_check.stdout.split('\n') if f':{server_port}' in line]
+                    if port_lines:
+                        safe_print(f"✓ IPv6端口正在监听: {port_lines[0].strip()}")
+                        server_running = True
+                    else:
+                        safe_print(f"✗ IPv6端口{server_port}未监听")
+                        server_running = False
+                else:
+                    safe_print("⚠ 无法检查端口状态")
+                    server_running = False
+            except Exception as e:
+                safe_print(f"⚠ 端口检查失败: {e}")
+                server_running = False
+            
+            # 如果端口监听成功，再测试连接
+            if server_running:
+                try:
+                    import socket
+                    sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+                    sock.settimeout(3)
+                    result = sock.connect_ex(('::1', server_port))
+                    sock.close()
+                    if result == 0:
+                        safe_print(f"✓ HTTP服务器连接测试成功")
+                    else:
+                        safe_print(f"⚠ IPv6连接测试失败，连接码: {result}")
+                        if result == 111:
+                            safe_print("原因: 连接被拒绝，可能是防火墙或服务未正常启动")
+                except Exception as e:
+                    safe_print(f"⚠ IPv6连接测试异常: {e}")
+                    
+        except Exception as e:
+            safe_print(f"✗ 启动HTTP服务器异常: {e}")
+            return False
         
         # 添加IPv6访问性测试
         def test_ipv6_http_access(ipv6_addr, port):
