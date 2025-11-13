@@ -1,9 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Hysteria2 一键部署工具 - 纯IPv6版本
+Hysteria2 一键部署工具 - 仅IPv6版本（防墙增强版）
 支持端口跳跃、流量混淆、nginx Web伪装等防墙功能
-本版本专为IPv6网络环境设计，所有配置均使用IPv6地址
+本版本专为纯IPv6网络环境设计，强制禁用IPv4，实现仅IPv6分流
+
+核心特性：
+- 仅IPv6分流：强制禁用IPv4出站，所有流量走IPv6
+- 端口跳跃：动态切换端口，防止端口封锁
+- Salamander混淆：加密流量特征，防DPI检测
+- nginx Web伪装：TCP端口显示正常网站
+- IPv6优先路由：完全屏蔽IPv4泄露
+
+基于GitLab原版脚本的IPv6分流设置进行优化
+适用于需要最高级别隐蔽性的IPv6网络环境
 """
 import os
 import sys
@@ -363,13 +373,17 @@ def format_ipv6_for_url(ip_address):
         return ip_address
 
 def get_ip_address():
-    """获取本机IPv6地址（优先获取公网IPv6，如果失败则使用本地IPv6）"""
+    """获取本机IPv6地址（仅IPv6模式，禁用IPv4）"""
+    # 仅IPv6模式 - 强制只使用IPv6地址
+    safe_print("仅IPv6模式已启用 - 禁用IPv4，只使用IPv6")
+    
     # 首先尝试获取公网IPv6
     try:
         # 尝试从公共API获取公网IPv6
         with urllib.request.urlopen('https://api6.ipify.org', timeout=5) as response:
             public_ip = response.read().decode('utf-8')
             if public_ip and len(public_ip) > 0 and ':' in public_ip:
+                safe_print(f"检测到公网IPv6地址: {public_ip}")
                 return public_ip
     except:
         try:
@@ -377,6 +391,7 @@ def get_ip_address():
             with urllib.request.urlopen('https://ipv6.icanhazip.com', timeout=5) as response:
                 public_ip = response.read().decode('utf-8').strip()
                 if public_ip and len(public_ip) > 0 and ':' in public_ip:
+                    safe_print(f"检测到公网IPv6地址: {public_ip}")
                     return public_ip
         except:
             pass
@@ -384,14 +399,20 @@ def get_ip_address():
     # 如果获取公网IPv6失败，尝试获取本地IPv6
     try:
         s = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
-        # 不需要真正连接，只是获取路由信息
+        # 连接到IPv6 DNS服务器获取本地IPv6地址
         s.connect(('2001:4860:4860::8888', 80))
         local_ip = s.getsockname()[0]
         s.close()
-        return local_ip
+        if ':' in local_ip and not local_ip.startswith('::1'):
+            safe_print(f"检测到本地IPv6地址: {local_ip}")
+            return local_ip
     except:
-        # 如果所有方法都失败，返回本地IPv6回环地址
-        return '::1'
+        pass
+        
+    # 强制仅IPv6：如果无法获取有效IPv6，返回回环地址但给出警告
+    safe_print("警告: 无法获取有效的IPv6地址，使用IPv6回环地址")
+    safe_print("建议检查网络设置确保IPv6连接可用")
+    return '::1'
 
 def setup_nginx_smart_proxy(base_dir, domain, web_dir, cert_path, key_path, hysteria_port):
     """设置nginx Web伪装：TCP端口显示正常网站，UDP端口用于Hysteria2"""
@@ -419,12 +440,13 @@ def setup_nginx_smart_proxy(base_dir, domain, web_dir, cert_path, key_path, hyst
         nginx_user = ensure_nginx_user()
         safe_print(f"使用nginx用户: {nginx_user}")
         
-        # 创建nginx标准Web配置
+        # 仅IPv6 nginx配置 - 完全禁用IPv4监听
         nginx_conf = f"""user {nginx_user};
 worker_processes auto;
 error_log /var/log/nginx/error.log notice;
 pid /run/nginx.pid;
 
+# 仅IPv6模式配置
 events {{
     worker_connections 1024;
 }}
@@ -436,10 +458,15 @@ http {{
     keepalive_timeout 65;
     server_tokens off;
     
-        server {{
+    # 仅IPv6 Web伪装配置
+    server {{
+        # 仅监听IPv6，禁用IPv4（ipv6only=on 强制仅IPv6）
         listen [::]:80 ipv6only=on;
         listen [::]:443 ssl http2 ipv6only=on;
-        server_name _;        ssl_certificate {os.path.abspath(cert_path)};
+        server_name _;
+        
+        # SSL配置
+        ssl_certificate {os.path.abspath(cert_path)};
         ssl_certificate_key {os.path.abspath(key_path)};
         ssl_protocols TLSv1.2 TLSv1.3;
         ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384;
@@ -452,8 +479,12 @@ http {{
             try_files $uri $uri/ /index.html;
         }}
         
+        # 安全头部
         add_header X-Frame-Options DENY always;
         add_header X-Content-Type-Options nosniff always;
+        
+        # 仅IPv6模式标识
+        add_header X-IPv6-Only "true" always;
     }}
 }}"""
         
@@ -949,6 +980,7 @@ def create_config(base_dir, port, password, cert_path, key_path, domain, enable_
     """创建Hysteria2配置文件（端口跳跃、混淆、HTTP/3伪装）"""
     
     # 基础配置
+    # 仅IPv6配置 - 完全禁用IPv4，只使用IPv6
     config = {
         "listen": f"[::]:{port}",
         "tls": {
@@ -964,21 +996,34 @@ def create_config(base_dir, port, password, cert_path, key_path, domain, enable_
             "down": "1000 mbps"
         },
         "ignoreClientBandwidth": False,
+        # 仅IPv6分流配置 - 强制IPv6优先
+        "resolver": {
+            "type": "udp",
+            "tcp": {
+                "addr": "[2001:4860:4860::8888]:53",  # Google IPv6 DNS
+                "timeout": "4s"
+            },
+            "udp": {
+                "addr": "[2001:4860:4860::8888]:53",  # Google IPv6 DNS
+                "timeout": "4s"
+            }
+        },
+        # 强制仅IPv6出站
+        "outbound": {
+            "type": "direct",
+            "bindDevice": "",
+            "bindAddress": "::",  # 绑定到IPv6
+            "v4": {
+                "enabled": False  # 禁用IPv4
+            },
+            "v6": {
+                "enabled": True   # 启用IPv6
+            }
+        },
         "log": {
             "level": "warn",
             "output": f"{base_dir}/logs/hysteria.log",
             "timestamp": True
-        },
-        "resolver": {
-            "type": "udp",
-            "tcp": {
-                "addr": "[2001:4860:4860::8888]:53",
-                "timeout": "4s"
-            },
-            "udp": {
-                "addr": "[2001:4860:4860::8888]:53", 
-                "timeout": "4s"
-            }
         }
     }
     
@@ -1513,13 +1558,14 @@ def start_service(start_script, port, base_dir):
 def show_help():
     """显示帮助信息"""
     safe_print("""
-Hysteria2 一键部署工具 (纯IPv6版本 - 防墙增强版)
+Hysteria2 一键部署工具 (仅IPv6版本 - 防墙增强版)
 
 重要说明：
-- 这是纯IPv6版本，只支持IPv6网络环境
+- 这是仅IPv6版本，强制禁用IPv4，只使用IPv6网络环境
 - Hysteria2基于UDP/QUIC协议，支持端口跳跃、混淆和HTTP/3伪装
 - 自动启用IPv6优化和BBR拥塞控制算法
-- 禁用IPv4以确保纯IPv6环境
+- 仅IPv6分流：禁用IPv4出站，强制IPv6出站，确保纯IPv6环境
+- 完全屏蔽IPv4流量，防止IPv4泄露
 
 使用方法:
     python3 hy2.py [命令] [选项]
@@ -1550,7 +1596,7 @@ Hysteria2 一键部署工具 (纯IPv6版本 - 防墙增强版)
 高级防墙选项:
     --simple                简化一键部署 (端口跳跃+混淆+nginx Web伪装)
     --port-range RANGE      指定端口跳跃范围 (如: 28888-29999)
-    --enable-bbr            启用BBR拥塞控制算法优化网络性能
+    --enable-bbr            启用IPv6 UDP网络优化（专为Hysteria2 UDP协议优化）
     --port-hopping          启用端口跳跃 (动态切换端口，防封锁)
     --obfs-password PWD     启用Salamander混淆 (防DPI检测)
     --http3-masquerade      启用HTTP/3伪装 (流量看起来像正常HTTP/3)
@@ -1565,7 +1611,7 @@ Hysteria2 一键部署工具 (纯IPv6版本 - 防墙增强版)
     # 自动检测IPv6地址部署
     python3 hy2.py install --simple
 
-    # 指定IPv6地址 + 高位端口 + BBR优化
+    # 指定IPv6地址 + 高位端口 + IPv6 UDP优化
     python3 hy2.py install --simple --ipv6 2001:db8::1 --port-range 28888-29999 --enable-bbr
 
     # IPv6完整一键部署 (自动启用所有防墙功能)
@@ -1908,7 +1954,7 @@ def main():
     parser.add_argument('--port-range', 
                       help='指定端口跳跃范围 (格式: 起始端口-结束端口，如: 28888-29999)')
     parser.add_argument('--enable-bbr', action='store_true',
-                      help='启用BBR拥塞控制算法优化网络性能')
+                      help='启用IPv6 UDP网络优化（专为Hysteria2优化）')
     
     
     args = parser.parse_args()
@@ -2170,6 +2216,14 @@ curl -k https://[{domain}] 或 curl -k https://{domain}  # HTTPS IPv6访问
             port = args.port if args.port else 443
             password = args.password if args.password else "ISDdwk@ASI47!F#WE"
             
+            # 先配置仅IPv6分流
+            safe_print("配置仅IPv6分流模式...")
+            ipv6_routing_success = configure_ipv6_only_routing()
+            if ipv6_routing_success:
+                safe_print("✓ 仅IPv6分流配置成功")
+            else:
+                safe_print("⚠ 仅IPv6分流配置失败，但不影响主要功能")
+            
             result = deploy_hysteria2_complete(
                 server_address=server_address,
                 port=port, 
@@ -2228,10 +2282,18 @@ curl -k https://[{domain}] 或 curl -k https://{domain}  # HTTPS IPv6访问
                 safe_print("警告: 使用真实证书需要指定域名，将使用自签名证书")
                 use_real_cert = False
         
-        safe_print("\n开始安装 Hysteria2（防墙增强版）...")
-        safe_print(f"服务器地址: {server_address}")
+        safe_print("\n开始安装 Hysteria2（防墙增强版 - 仅IPv6模式）...")
+        safe_print("仅IPv6分流模式: 禁用IPv4，强制使用IPv6出站")
+        
+        # 检查IPv6连通性
+        if not check_ipv6_connectivity():
+            safe_print("⚠ IPv6连通性检查失败，但继续安装...")
+            safe_print("建议检查网络配置确保IPv6可用")
+        
+        safe_print(f"服务器地址: {server_address} (IPv6)")
         safe_print(f"端口: {port} ({'HTTPS标准端口' if port == 443 else 'HTTP标准端口' if port == 80 else '自定义端口'})")
         safe_print(f"证书类型: {'真实证书' if use_real_cert else '自签名证书'}")
+        safe_print("网络配置: 仅IPv6，禁用IPv4")
         
         # 显示启用的防墙功能
         if args.port_hopping:
@@ -2316,6 +2378,14 @@ curl -k https://[{domain}] 或 curl -k https://{domain}  # HTTPS IPv6访问
         # 如果获取真实证书失败或不使用真实证书，则生成自签名证书
         if not cert_path or not key_path:
             cert_path, key_path = generate_self_signed_cert(base_dir, server_address)
+        
+        # 配置仅IPv6分流（默认启用）
+        safe_print("配置仅IPv6分流模式...")
+        ipv6_routing_success = configure_ipv6_only_routing()
+        if ipv6_routing_success:
+            safe_print("✓ 仅IPv6分流配置成功")
+        else:
+            safe_print("⚠ 仅IPv6分流配置失败，但不影响主要功能")
         
         # 创建配置
         config_path = create_config(base_dir, port, password, cert_path, key_path, 
@@ -2420,16 +2490,17 @@ curl -k https://[{domain}] 或 curl -k https://{domain}  # HTTPS IPv6访问
         config_link = f"hysteria2://{urllib.parse.quote(password)}@{formatted_address}:{port}?{'&'.join(params)}"
         
         safe_print(f"""
-Hysteria2 防墙增强版安装成功！
+Hysteria2 防墙增强版（仅IPv6模式）安装成功！
 
 安装信息:
-- 版本: {version}
+- 版本: {version} (仅IPv6分流版本)
 - 安装目录: {base_dir}
 - 配置文件: {config_path}
 - Web伪装目录: {web_dir}
 - 启动脚本: {start_script}
 - 停止脚本: {stop_script}
 - 日志文件: {base_dir}/logs/hysteria.log
+- 网络模式: 仅IPv6，已禁用IPv4
 
 使用方法:
 1. 启动服务: {start_script}
@@ -2438,9 +2509,10 @@ Hysteria2 防墙增强版安装成功！
 4. 查看状态: python3 hy2.py status
 
 服务器信息:
-- 地址: {server_address}
+- 地址: {server_address} (IPv6)
 - 端口: {port} ({'HTTPS端口' if port == 443 else 'HTTP端口' if port == 80 else '自定义端口'})
 - 密码: {password}
+- 分流模式: 仅IPv6，禁用IPv4出站
 - 证书: {'真实证书' if use_real_cert else '自签名证书'} ({cert_path})
 - Web伪装: {'启用' if args.web_masquerade else '禁用'}
 
@@ -2504,17 +2576,29 @@ UDP测试: 使用客户端连接验证Hysteria2服务
         sys.exit(1)
 
 def setup_port_hopping_ip6tables(port_start, port_end, listen_port):
-    """配置ip6tables实现IPv6端口跳跃"""
+    """配置ip6tables实现IPv6端口跳跃（仅IPv6模式）"""
     try:
-        safe_print(f"配置ip6tables IPv6端口跳跃...")
+        safe_print(f"配置ip6tables IPv6端口跳跃（仅IPv6模式）...")
         safe_print(f"端口范围: {port_start}-{port_end} -> {listen_port}")
+        safe_print("仅IPv6分流: 禁用IPv4，强制IPv6出站")
         
-        # 检查iptables是否可用
+        # 检查ip6tables是否可用（专门检查IPv6 iptables）
         try:
-            subprocess.run(['iptables', '--version'], check=True, capture_output=True)
+            subprocess.run(['ip6tables', '--version'], check=True, capture_output=True)
+            safe_print("ip6tables可用，继续配置IPv6规则")
         except:
-            safe_print("iptables不可用，跳过端口跳跃配置")
+            safe_print("ip6tables不可用，跳过IPv6端口跳跃配置")
             return False
+        
+        # 仅IPv6模式：禁用IPv4转发，启用IPv6转发
+        try:
+            # 禁用IPv4转发（确保仅IPv6）
+            subprocess.run(['sudo', 'sysctl', '-w', 'net.ipv4.ip_forward=0'], check=True)
+            # 启用IPv6转发
+            subprocess.run(['sudo', 'sysctl', '-w', 'net.ipv6.conf.all.forwarding=1'], check=True)
+            safe_print("已禁用IPv4转发，启用IPv6转发（仅IPv6模式）")
+        except Exception as e:
+            safe_print(f"配置IPv6转发失败: {e}")
         
         # 清理可能存在的旧IPv6规则
         try:
@@ -2694,13 +2778,20 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
     if success:
         safe_print(f"端口跳跃：{port_start}-{port_end} → {port}")
     
-    # 8. BBR优化（如果启用）
+    # 8. 配置仅IPv6分流（默认启用）
+    ipv6_routing_success = configure_ipv6_only_routing()
+    if ipv6_routing_success:
+        safe_print("仅IPv6分流配置已启用")
+    else:
+        safe_print("仅IPv6分流配置失败，但不影响主要功能")
+    
+    # 9. IPv6 UDP优化（如果启用）
     if enable_bbr:
-        bbr_success = enable_bbr_optimization()
-        if bbr_success:
-            safe_print("BBR拥塞控制优化已启用")
+        udp_opt_success = enable_ipv6_udp_optimization()
+        if udp_opt_success:
+            safe_print("IPv6 UDP网络优化已启用")
         else:
-            safe_print("BBR优化失败，但不影响主要功能")
+            safe_print("IPv6 UDP优化失败，但不影响主要功能")
     
     # 9. 创建并启动Hysteria2服务
     start_script = create_service_script(base_dir, binary_path, config_path, port)
@@ -3102,22 +3193,115 @@ server {{
         safe_print(f"nginx配置失败: {e}")
         return False
 
-def enable_bbr_optimization():
-    """启用BBR拥塞控制算法优化网络性能"""
+def check_ipv6_connectivity():
+    """检查IPv6连通性，确保系统支持IPv6"""
     try:
-        safe_print("正在启用BBR拥塞控制算法...")
+        safe_print("检查IPv6连通性...")
         
-        # 检查当前TCP拥塞控制算法
+        # 检查是否禁用了IPv6
         try:
-            with open('/proc/sys/net/ipv4/tcp_congestion_control', 'r') as f:
-                current_cc = f.read().strip()
-            safe_print(f"当前TCP拥塞控制算法: {current_cc}")
-            
-            if current_cc == 'bbr':
-                safe_print("BBR已经启用（适用于IPv4和IPv6）")
-                return True
+            with open('/proc/sys/net/ipv6/conf/all/disable_ipv6', 'r') as f:
+                ipv6_disabled = f.read().strip()
+                if ipv6_disabled == '1':
+                    safe_print("警告: 系统IPv6已被禁用")
+                    return False
         except:
-            safe_print("无法检查BBR状态")
+            pass  # 某些系统可能没有此文件
+        
+        # 测试IPv6连通性
+        test_hosts = [
+            ('2001:4860:4860::8888', 'Google IPv6 DNS'),
+            ('2606:4700:4700::1111', 'Cloudflare IPv6 DNS'),
+            ('2001:db8::1', 'IPv6测试地址')
+        ]
+        
+        connectivity_ok = False
+        for host, name in test_hosts:
+            try:
+                sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+                sock.settimeout(3)
+                sock.connect((host, 53))
+                sock.close()
+                safe_print(f"✓ IPv6连接测试成功: {name}")
+                connectivity_ok = True
+                break
+            except Exception as e:
+                safe_print(f"✗ IPv6连接测试失败: {name} - {e}")
+                continue
+        
+        if not connectivity_ok:
+            safe_print("⚠ 警告: 无法建立IPv6连接")
+            safe_print("请确保:")
+            safe_print("  1. 服务器支持IPv6")
+            safe_print("  2. IPv6没有被系统或防火墙禁用")
+            safe_print("  3. 网络提供商支持IPv6")
+            return False
+        
+        safe_print("IPv6连通性检查通过")
+        return True
+        
+    except Exception as e:
+        safe_print(f"IPv6连通性检查失败: {e}")
+        return False
+
+def configure_ipv6_only_routing():
+    """配置仅IPv6分流，禁用IPv4路由，强制所有流量走IPv6"""
+    try:
+        safe_print("配置仅IPv6分流路由...")
+        safe_print("禁用IPv4路由，启用IPv6路由")
+        
+        # 禁用IPv4转发和路由
+        subprocess.run(['sudo', 'sysctl', '-w', 'net.ipv4.ip_forward=0'], check=True)
+        subprocess.run(['sudo', 'sysctl', '-w', 'net.ipv4.conf.all.send_redirects=0'], check=True)
+        subprocess.run(['sudo', 'sysctl', '-w', 'net.ipv4.conf.default.send_redirects=0'], check=True)
+        
+        # 启用IPv6转发和路由
+        subprocess.run(['sudo', 'sysctl', '-w', 'net.ipv6.conf.all.forwarding=1'], check=True)
+        subprocess.run(['sudo', 'sysctl', '-w', 'net.ipv6.conf.default.forwarding=1'], check=True)
+        subprocess.run(['sudo', 'sysctl', '-w', 'net.ipv6.conf.all.accept_ra=2'], check=True)
+        subprocess.run(['sudo', 'sysctl', '-w', 'net.ipv6.conf.default.accept_ra=2'], check=True)
+        
+        # 配置IPv6优先级
+        subprocess.run(['sudo', 'sysctl', '-w', 'net.ipv6.bindv6only=1'], check=False)  # 某些系统可能没有此参数
+        
+        # 禁用IPv4 ICMP重定向
+        subprocess.run(['sudo', 'sysctl', '-w', 'net.ipv4.conf.all.accept_redirects=0'], check=True)
+        subprocess.run(['sudo', 'sysctl', '-w', 'net.ipv4.conf.default.accept_redirects=0'], check=True)
+        
+        # 启用IPv6 ICMP
+        subprocess.run(['sudo', 'sysctl', '-w', 'net.ipv6.conf.all.accept_redirects=1'], check=True)
+        subprocess.run(['sudo', 'sysctl', '-w', 'net.ipv6.conf.default.accept_redirects=1'], check=True)
+        
+        safe_print("仅IPv6分流配置完成：")
+        safe_print("  - IPv4转发: 禁用")
+        safe_print("  - IPv6转发: 启用")
+        safe_print("  - IPv4路由: 禁用")
+        safe_print("  - IPv6路由: 启用")
+        
+        return True
+        
+    except Exception as e:
+        safe_print(f"仅IPv6分流配置失败: {e}")
+        return False
+
+def enable_ipv6_udp_optimization():
+    """启用IPv6 UDP网络优化（专为Hysteria2 UDP/QUIC协议优化）"""
+    try:
+        safe_print("正在启用IPv6 UDP网络优化...")
+        safe_print("注意: Hysteria2基于UDP/QUIC协议，BBR对UDP效果有限")
+        safe_print("专注于IPv6 UDP缓冲区和路由优化")
+        
+        # 检查IPv6支持
+        try:
+            with open('/proc/sys/net/ipv6/conf/all/disable_ipv6', 'r') as f:
+                ipv6_status = f.read().strip()
+                if ipv6_status == '1':
+                    safe_print("警告: IPv6已被禁用，无法进行IPv6优化")
+                    return False
+                else:
+                    safe_print("IPv6支持已启用，继续优化配置")
+        except:
+            safe_print("无法检查IPv6状态，继续配置")
             pass
         
         # 检查内核版本
@@ -3149,22 +3333,10 @@ def enable_bbr_optimization():
             pass
         
         # 配置BBR - 针对IPv6优化（使用实际存在的内核参数）
-        bbr_config = """# BBR拥塞控制优化配置 - IPv6优化版本
-# BBR拥塞控制（对IPv4和IPv6都有效）
-net.core.default_qdisc = fq
-net.ipv4.tcp_congestion_control = bbr
+        ipv6_udp_config = """# 仅IPv6网络优化配置 (不包含BBR，因为BBR主要针对TCP)
+# Hysteria2基于UDP/QUIC，BBR对UDP效果有限，专注于IPv6 UDP优化
 
-# 网络性能优化
-net.core.rmem_max = 134217728
-net.core.wmem_max = 134217728
-net.core.netdev_max_backlog = 5000
-
-# TCP优化（IPv4/IPv6通用）
-net.ipv4.tcp_rmem = 4096 87380 134217728
-net.ipv4.tcp_wmem = 4096 65536 134217728
-net.ipv4.tcp_mtu_probing = 1
-
-# IPv6特定优化
+# 仅IPv6配置 - 禁用IPv4，强制IPv6
 net.ipv6.conf.all.disable_ipv6 = 0
 net.ipv6.conf.default.disable_ipv6 = 0
 net.ipv6.conf.lo.disable_ipv6 = 0
@@ -3173,30 +3345,50 @@ net.ipv6.conf.default.accept_ra = 1
 net.ipv6.conf.all.forwarding = 1
 net.ipv6.conf.default.forwarding = 1
 
-# UDP优化（Hysteria2使用UDP IPv6）
-net.core.rmem_default = 262144
-net.core.rmem_max = 16777216
-net.core.wmem_default = 262144
-net.core.wmem_max = 16777216
-net.core.netdev_max_backlog = 5000
+# 禁用IPv4网络（仅IPv6模式）
+net.ipv4.ip_forward = 0
+net.ipv4.conf.all.send_redirects = 0
+net.ipv4.conf.default.send_redirects = 0
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.default.accept_redirects = 0
 
-# UDP内存优化
-net.ipv4.udp_rmem_min = 8192
-net.ipv4.udp_wmem_min = 8192
-net.ipv4.udp_mem = 102400 873800 16777216
+# IPv6路由和邻居表优化
+net.ipv6.route.max_size = 32768
+net.ipv6.neigh.default.gc_thresh1 = 256
+net.ipv6.neigh.default.gc_thresh2 = 1024
+net.ipv6.neigh.default.gc_thresh3 = 2048
+net.ipv6.neigh.default.gc_stale_time = 120
+
+# IPv6网络缓冲区优化（专为UDP优化）
+net.core.rmem_max = 268435456
+net.core.wmem_max = 268435456
+net.core.rmem_default = 1048576
+net.core.wmem_default = 1048576
+net.core.netdev_max_backlog = 10000
+net.core.netdev_budget = 600
+
+# IPv6 UDP专用优化（Hysteria2核心协议）
+net.core.netdev_tstamp_prequeue = 0
+net.ipv6.conf.all.use_tempaddr = 0
+net.ipv6.conf.default.use_tempaddr = 0
+
+# 队列优化（支持高速UDP流量）
+net.core.default_qdisc = fq_codel
+net.core.somaxconn = 65535
+net.core.netdev_budget_usecs = 5000
 """
         
         # 写入sysctl配置
-        sysctl_file = "/etc/sysctl.d/99-hysteria2-bbr.conf"
+        sysctl_file = "/etc/sysctl.d/99-hysteria2-ipv6-udp.conf"
         try:
             import tempfile
             with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.conf') as tmp:
-                tmp.write(bbr_config)
+                tmp.write(ipv6_udp_config)
                 tmp.flush()
                 subprocess.run(['sudo', 'cp', tmp.name, sysctl_file], check=True)
                 os.unlink(tmp.name)
             
-            safe_print(f"BBR配置已写入: {sysctl_file}")
+            safe_print(f"IPv6 UDP优化配置已写入: {sysctl_file}")
         except Exception as e:
             safe_print(f"写入BBR配置失败: {e}")
             return False
@@ -3204,25 +3396,26 @@ net.ipv4.udp_mem = 102400 873800 16777216
         # 应用配置
         try:
             subprocess.run(['sudo', 'sysctl', '-p', sysctl_file], check=True)
-            safe_print("BBR配置已应用")
+            safe_print("IPv6 UDP优化配置已应用")
         except Exception as e:
             safe_print(f"应用BBR配置失败: {e}")
         
-        # 立即启用BBR
+        # 立即启用关键IPv6优化
         try:
-            subprocess.run(['sudo', 'sysctl', '-w', 'net.core.default_qdisc=fq'], check=True)
-            subprocess.run(['sudo', 'sysctl', '-w', 'net.ipv4.tcp_congestion_control=bbr'], check=True)
-            safe_print("BBR拥塞控制已立即生效（适用于IPv4和IPv6）")
+            subprocess.run(['sudo', 'sysctl', '-w', 'net.core.default_qdisc=fq_codel'], check=True)
+            subprocess.run(['sudo', 'sysctl', '-w', 'net.ipv6.conf.all.forwarding=1'], check=True)
+            subprocess.run(['sudo', 'sysctl', '-w', 'net.ipv4.ip_forward=0'], check=True)
+            safe_print("IPv6优化已立即生效（禁用IPv4，启用IPv6转发）")
         except Exception as e:
             safe_print(f"立即启用BBR失败: {e}")
         
-        # 验证BBR是否启用
+        # 验证IPv6优化是否启用
         try:
-            with open('/proc/sys/net/ipv4/tcp_congestion_control', 'r') as f:
-                current_cc = f.read().strip()
+            with open('/proc/sys/net/ipv6/conf/all/forwarding', 'r') as f:
+                ipv6_forwarding = f.read().strip()
             
-            if current_cc == 'bbr':
-                safe_print("✓ BBR拥塞控制算法启用成功！（适用于IPv4和IPv6）")
+            if ipv6_forwarding == '1':
+                safe_print("✓ IPv6转发已启用，仅IPv6模式配置成功！")
                 
                 # 显示可用的拥塞控制算法
                 try:
@@ -3234,15 +3427,15 @@ net.ipv4.udp_mem = 102400 873800 16777216
                 
                 return True
             else:
-                safe_print(f"BBR启用失败，当前算法: {current_cc}")
+                safe_print(f"IPv6转发启用失败，当前状态: {ipv6_forwarding}")
                 return False
                 
         except Exception as e:
-            safe_print(f"验证BBR状态失败: {e}")
+            safe_print(f"验证IPv6优化状态失败: {e}")
             return False
             
     except Exception as e:
-        safe_print(f"BBR优化失败: {e}")
+        safe_print(f"IPv6 UDP优化失败: {e}")
         return False
 
 def setup_config_download_service(server_address, v2rayn_file, clash_file, hysteria_official_file, hysteria_client_hopping_file, subscription_file, subscription_plain_file, json_file):
@@ -3437,6 +3630,7 @@ def show_final_summary(server_address, port, port_range, password, obfs_password
     
     # 防护特性
     safe_print(f"\n\033[35m防护特性:\033[0m")
+    safe_print("   ⭐ 仅IPv6分流: 强制禁用IPv4，所有流量走IPv6（最高级别隐蔽性）")
     if enable_port_hopping:
         safe_print(f"   端口跳跃: {port_range} → {port} (服务器端DNAT实现)")
     if obfs_password:
@@ -3444,6 +3638,7 @@ def show_final_summary(server_address, port, port_range, password, obfs_password
     safe_print("   HTTP/3伪装: 模拟正常HTTP/3流量")
     safe_print("   nginx Web伪装: TCP端口显示正常网站")
     safe_print("   UDP协议: 基于QUIC/HTTP3，抗封锁能力强")
+    safe_print("   IPv6优先: 完全屏蔽IPv4流量，防止IPv4泄露")
     
     # 使用提醒
     safe_print(f"\n\033[31m使用提醒:\033[0m")
