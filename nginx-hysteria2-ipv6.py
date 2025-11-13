@@ -1531,7 +1531,8 @@ Hysteria2 一键部署工具 (防墙增强版)
     help         显示此帮助信息
 
 基础选项:
-    --ip IP           指定服务器IP地址
+    --ipv6 IPV6       指定服务器IPv6地址 (推荐！)
+    --ip IP           指定服务器IP地址 (兼容性参数，建议使用--ipv6)
     --port PORT       指定服务器端口 (推荐: 443)
     --password PWD    指定密码
 
@@ -1554,29 +1555,32 @@ Hysteria2 一键部署工具 (防墙增强版)
 
 示例:
 
-    # 简化一键部署 (推荐！端口跳跃+混淆+nginx Web伪装)
+    # IPv6地址简化一键部署 (推荐！)
+    python3 hy2.py install --simple --ipv6 2001:db8::1
+
+    # 自动检测IPv6地址部署
     python3 hy2.py install --simple
 
-    # 高位端口 + BBR优化 (最强性能)
-    python3 hy2.py install --simple --port-range 28888-29999 --enable-bbr
+    # 指定IPv6地址 + 高位端口 + BBR优化
+    python3 hy2.py install --simple --ipv6 2001:db8::1 --port-range 28888-29999 --enable-bbr
 
-    # 完整一键部署 (自动启用所有防墙功能)
-    python3 hy2.py install --one-click
+    # IPv6完整一键部署 (自动启用所有防墙功能)
+    python3 hy2.py install --one-click --ipv6 2001:db8::1
 
-    # 基础安装
-    python3 hy2.py install
+    # IPv6基础安装
+    python3 hy2.py install --ipv6 2001:db8::1
 
-    # 最强防墙配置
-    python3 hy2.py install --port-hopping --obfs-password "random123" --http3-masquerade --domain your.domain.com --use-real-cert
+    # IPv6最强防墙配置
+    python3 hy2.py install --ipv6 2001:db8::1 --port-hopping --obfs-password "random123" --http3-masquerade --domain your.domain.com --use-real-cert
 
-    # 端口跳跃模式 (防端口封锁)
-    python3 hy2.py install --port-hopping --port 443
+    # IPv6端口跳跃模式 (防端口封锁)
+    python3 hy2.py install --ipv6 2001:db8::1 --port-hopping --port 443
 
-    # 流量混淆模式 (防DPI检测)
-    python3 hy2.py install --obfs-password "myObfsKey" --port 8443
+    # IPv6流量混淆模式 (防DPI检测)
+    python3 hy2.py install --ipv6 2001:db8::1 --obfs-password "myObfsKey" --port 8443
 
-    # HTTP/3伪装模式
-    python3 hy2.py install --http3-masquerade --port 443
+    # IPv6查看客户端配置
+    python3 hy2.py client --ipv6 2001:db8::1
 
 Hysteria2 真实防墙技术:
 
@@ -1873,7 +1877,8 @@ def main():
     parser = argparse.ArgumentParser(description='Hysteria2 一键部署工具（防墙增强版）')
     parser.add_argument('command', nargs='?', default='install',
                       help='命令: install, del, status, help, setup-nginx, client, fix')
-    parser.add_argument('--ip', help='指定服务器IP地址或域名')
+    parser.add_argument('--ip', help='指定服务器IPv4地址或域名（此版本仅支持IPv6，请使用--ipv6）')
+    parser.add_argument('--ipv6', help='指定服务器IPv6地址')
     parser.add_argument('--port', type=int, help='指定服务器端口（推荐443）')
     parser.add_argument('--password', help='指定密码')
     parser.add_argument('--domain', help='指定域名（用于获取真实证书）')
@@ -1930,7 +1935,13 @@ def main():
         with open(config_path, 'r') as f:
             config = json.load(f)
         
-        domain = args.domain if args.domain else get_ip_address()
+        # 获取域名或IPv6地址
+        if args.ipv6:
+            domain = args.ipv6
+        elif args.domain:
+            domain = args.domain
+        else:
+            domain = get_ip_address()
         web_dir = f"{base_dir}/web"
         cert_path = config['tls']['cert']
         key_path = config['tls']['key']
@@ -1973,7 +1984,13 @@ curl -k https://{domain}  # 如果使用自签名证书
         with open(config_path, 'r') as f:
             config = json.load(f)
         
-        server_address = args.domain if args.domain else get_ip_address()
+        # 优先使用IPv6地址
+        if args.ipv6:
+            server_address = args.ipv6
+        elif args.domain:
+            server_address = args.domain
+        else:
+            server_address = get_ip_address()
         port = int(config['listen'].replace(':', ''))
         password = config['auth']['password']
         use_real_cert = 'letsencrypt' in config['tls']['cert']
@@ -1994,7 +2011,13 @@ curl -k https://{domain}  # 如果使用自签名证书
             safe_print("Hysteria2 未安装，请先运行 install 命令")
             sys.exit(1)
         
-        domain = args.domain if args.domain else get_ip_address()
+        # 获取域名或IPv6地址
+        if args.ipv6:
+            domain = args.ipv6
+        elif args.domain:
+            domain = args.domain  
+        else:
+            domain = get_ip_address()
         
         safe_print("正在修复nginx配置 - 使用简化方案...")
         
@@ -2130,7 +2153,16 @@ curl -k https://{domain}  # HTTPS访问
     elif args.command == 'install':
         # 简化一键部署
         if args.simple:
-            server_address = args.ip if args.ip else get_ip_address()
+            # 优先使用IPv6地址
+            if args.ipv6:
+                server_address = args.ipv6
+                safe_print(f"使用指定的IPv6地址: {server_address}")
+            elif args.ip:
+                safe_print("警告: 此版本为纯IPv6版本，--ip参数可能不兼容。建议使用--ipv6参数")
+                server_address = args.ip
+            else:
+                server_address = get_ip_address()
+                safe_print(f"自动检测到IPv6地址: {server_address}")
             port = args.port if args.port else 443
             password = args.password if args.password else "ISDdwk@ASI47!F#WE"
             
@@ -2167,14 +2199,27 @@ curl -k https://{domain}  # HTTPS访问
         email = args.email if args.email else "admin@example.com"
         use_real_cert = args.use_real_cert
         
-        # 获取IP地址或域名
+        # 获取IPv6地址或域名
         if domain:
             server_address = domain
             safe_print(f"使用域名: {domain}")
             if not use_real_cert:
                 safe_print("建议使用 --use-real-cert 参数获取真实证书以增强安全性")
+        elif args.ipv6:
+            server_address = args.ipv6
+            safe_print(f"使用指定的IPv6地址: {server_address}")
+            if use_real_cert:
+                safe_print("警告: 使用真实证书需要指定域名，将使用自签名证书")
+                use_real_cert = False
+        elif args.ip:
+            safe_print("警告: 此版本为纯IPv6版本，--ip参数可能不兼容。建议使用--ipv6参数")
+            server_address = args.ip
+            if use_real_cert:
+                safe_print("警告: 使用真实证书需要指定域名，将使用自签名证书")
+                use_real_cert = False
         else:
-            server_address = args.ip if args.ip else get_ip_address()
+            server_address = get_ip_address()
+            safe_print(f"自动检测到IPv6地址: {server_address}")
             if use_real_cert:
                 safe_print("警告: 使用真实证书需要指定域名，将使用自签名证书")
                 use_real_cert = False
