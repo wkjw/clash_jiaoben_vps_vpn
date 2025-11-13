@@ -3704,14 +3704,18 @@ class ConfigHandler(http.server.SimpleHTTPRequestHandler):
         # 禁用访问日志
         pass
 
-class DualStackTCPServer(socketserver.TCPServer):
-    """支持IPv4和IPv6的双栈服务器"""
+class IPv6TCPServer(socketserver.TCPServer):
+    """IPv6服务器，优先支持IPv6"""
     address_family = socket.AF_INET6
     
     def __init__(self, server_address, RequestHandlerClass, bind_and_activate=True):
         super().__init__(server_address, RequestHandlerClass, False)
         # 设置IPv6双栈模式，同时接受IPv4和IPv6连接
-        self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        try:
+            self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        except (AttributeError, OSError):
+            # 某些系统可能不支持IPV6_V6ONLY
+            pass
         if bind_and_activate:
             try:
                 self.server_bind()
@@ -3722,20 +3726,44 @@ class DualStackTCPServer(socketserver.TCPServer):
 
 if __name__ == "__main__":
     PORT = {server_port}
+    server_started = False
+    
+    # 首先尝试IPv6双栈模式
     try:
-        # 尝试双栈服务器（推荐）
-        try:
-            httpd = DualStackTCPServer(("", PORT), ConfigHandler)
-            safe_print(f"HTTP服务器已启动，端口: {{PORT}} (双栈模式)")
-        except Exception as e:
-            # 如果双栈失败，回退到IPv4
-            safe_print(f"双栈模式失败: {{e}}，尝试IPv4模式")
-            httpd = socketserver.TCPServer(("0.0.0.0", PORT), ConfigHandler)
-            safe_print(f"HTTP服务器已启动，端口: {{PORT}} (IPv4模式)")
+        httpd = IPv6TCPServer(('::', PORT), ConfigHandler)
+        safe_print(f"HTTP服务器已启动，端口: {{PORT}} (IPv6双栈模式)")
+        server_started = True
+    except Exception as ipv6_error:
+        safe_print(f"IPv6双栈模式失败: {{ipv6_error}}")
         
+        # 尝试仅IPv6模式
+        try:
+            httpd = socketserver.TCPServer(('::', PORT), ConfigHandler)
+            httpd.address_family = socket.AF_INET6
+            safe_print(f"HTTP服务器已启动，端口: {{PORT}} (仅IPv6模式)")
+            server_started = True
+        except Exception as ipv6_only_error:
+            safe_print(f"仅IPv6模式失败: {{ipv6_only_error}}")
+            
+            # 最后回退到IPv4
+            try:
+                httpd = socketserver.TCPServer(('0.0.0.0', PORT), ConfigHandler)
+                safe_print(f"HTTP服务器已启动，端口: {{PORT}} (IPv4模式)")
+                server_started = True
+            except Exception as ipv4_error:
+                safe_print(f"IPv4模式也失败: {{ipv4_error}}")
+    
+    if not server_started:
+        safe_print("所有网络模式都失败，无法启动HTTP服务器")
+        sys.exit(1)
+    
+    try:
         httpd.serve_forever()
+    except KeyboardInterrupt:
+        safe_print("服务器被用户中断")
+        httpd.server_close()
     except Exception as e:
-        safe_print(f"服务器启动失败: {{e}}")
+        safe_print(f"服务器运行出错: {{e}}")
         sys.exit(1)
 '''
         
@@ -3744,6 +3772,42 @@ if __name__ == "__main__":
         with open(server_file, 'w', encoding='utf-8') as f:
             f.write(server_script)
         subprocess.run(['chmod', '+x', server_file], check=True)
+        
+        # 创建服务器重启脚本
+        restart_script = f'''#!/bin/bash
+# Hysteria2 配置服务器重启脚本
+
+echo "停止现有服务器进程..."
+pkill -f "config_server.py" 2>/dev/null || true
+
+echo "等待进程完全停止..."
+sleep 2
+
+echo "启动新的HTTP服务器..."
+cd {base_dir}
+nohup python3 config_server.py > server.log 2>&1 &
+NEW_PID=$!
+
+echo "服务器已启动，PID: $NEW_PID"
+echo "检查服务器状态..."
+sleep 3
+
+if kill -0 $NEW_PID 2>/dev/null; then
+    echo "✓ HTTP服务器启动成功 (PID: $NEW_PID)"
+    echo "✓ 访问地址: http://localhost:{server_port}/"
+    if [ -n "{get_ip_address() or ''}" ]; then
+        echo "✓ IPv6访问: http://[{get_ip_address() or 'IPv6地址'}]:{server_port}/"
+    fi
+else
+    echo "✗ HTTP服务器启动失败"
+    echo "查看日志: cat {base_dir}/server.log"
+fi
+'''
+        
+        restart_file = f"{base_dir}/restart_server.sh"
+        with open(restart_file, 'w', encoding='utf-8') as f:
+            f.write(restart_script)
+        subprocess.run(['chmod', '+x', restart_file], check=True)
         
         # 开放防火墙端口
         subprocess.run(['sudo', 'iptables', '-A', 'INPUT', '-p', 'tcp', '--dport', str(server_port), '-j', 'ACCEPT'], check=False)
@@ -3790,11 +3854,54 @@ if __name__ == "__main__":
             else:
                 safe_print(f"HTTP服务器已启动，端口: {server_port}")
         
+        # 添加IPv6访问性测试
+        def test_ipv6_http_access(ipv6_addr, port):
+            """测试IPv6 HTTP访问性"""
+            try:
+                import urllib.request
+                import urllib.error
+                url = f"http://[{ipv6_addr}]:{port}/"
+                req = urllib.request.Request(url)
+                req.add_header('User-Agent', 'Hysteria2-Config-Test')
+                
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    if response.status == 200:
+                        return True, "访问成功"
+                    else:
+                        return False, f"HTTP状态码: {response.status}"
+            except urllib.error.URLError as e:
+                return False, f"URL错误: {e.reason}"
+            except Exception as e:
+                return False, f"访问失败: {str(e)}"
+        
         # 显示配置文件访问信息
         server_ip = get_ip_address()
         if server_ip:
             safe_print(f"配置文件下载地址: http://[{server_ip}]:{server_port}/")
+            
+            # 测试IPv6访问性
+            safe_print("正在测试IPv6 HTTP访问性...")
+            success, message = test_ipv6_http_access(server_ip, server_port)
+            if success:
+                safe_print("✓ IPv6 HTTP访问测试成功")
+            else:
+                safe_print(f"⚠ IPv6 HTTP访问测试失败: {message}")
+                safe_print("请检查:")
+                safe_print("1. 防火墙设置 (ip6tables -L INPUT)")
+                safe_print("2. 服务器IPv6配置")
+                safe_print("3. 网络连接")
+        
         safe_print(f"本地访问地址: http://localhost:{server_port}/")
+        
+        # 显示防火墙检查命令
+        safe_print(f"检查防火墙命令:")
+        safe_print(f"  IPv4: iptables -L INPUT | grep {server_port}")
+        safe_print(f"  IPv6: ip6tables -L INPUT | grep {server_port}")
+        safe_print(f"检查端口监听: ss -tlnp | grep :{server_port}")
+        
+        # 提供重启服务器的建议
+        safe_print("\n如果需要重启服务器，请执行:")
+        safe_print(f"pkill -f config_server.py && python3 {base_dir}/config_server.py &")
         
         return True
         
