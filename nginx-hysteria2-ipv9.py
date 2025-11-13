@@ -3696,7 +3696,7 @@ class ConfigHandler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         if self.path.endswith(('.yaml', '.yml', '.json')):
             filename = os.path.basename(self.path)
-            self.send_header('Content-Disposition', f'attachment; filename="{{filename}}"')
+            self.send_header('Content-Disposition', f'attachment; filename="{{{{filename}}}}"')
             self.send_header('Content-Type', 'application/octet-stream')
         super().end_headers()
     
@@ -3704,17 +3704,17 @@ class ConfigHandler(http.server.SimpleHTTPRequestHandler):
         # 禁用访问日志
         pass
 
-class IPv6TCPServer(socketserver.TCPServer):
-    """IPv6服务器，优先支持IPv6"""
+class IPv6OnlyTCPServer(socketserver.TCPServer):
+    """仅IPv6服务器，不支持IPv4连接"""
     address_family = socket.AF_INET6
     
     def __init__(self, server_address, RequestHandlerClass, bind_and_activate=True):
         super().__init__(server_address, RequestHandlerClass, False)
-        # 设置IPv6双栈模式，同时接受IPv4和IPv6连接
+        # 设置仅IPv6模式，禁用IPv4连接
         try:
-            self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
-        except (AttributeError, OSError):
-            # 某些系统可能不支持IPV6_V6ONLY
+            self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+        except (AttributeError, OSError) as e:
+            # 如果系统不支持IPV6_V6ONLY，记录错误但继续
             pass
         if bind_and_activate:
             try:
@@ -3726,35 +3726,22 @@ class IPv6TCPServer(socketserver.TCPServer):
 
 if __name__ == "__main__":
     PORT = {server_port}
-    server_started = False
     
-    # 首先尝试IPv6双栈模式
+    # 仅IPv6模式 - 不支持IPv4
     try:
-        httpd = IPv6TCPServer(('::', PORT), ConfigHandler)
-        safe_print(f"HTTP服务器已启动，端口: {{PORT}} (IPv6双栈模式)")
-        server_started = True
-    except Exception as ipv6_error:
-        safe_print(f"IPv6双栈模式失败: {{ipv6_error}}")
+        # 创建仅IPv6服务器
+        httpd = socketserver.TCPServer(('::', PORT), ConfigHandler)
+        httpd.address_family = socket.AF_INET6
+        # 确保仅使用IPv6，禁用IPv4
+        httpd.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+        safe_print(f"HTTP服务器已启动，端口: {{{{PORT}}}} (仅IPv6模式)")
         
-        # 尝试仅IPv6模式
-        try:
-            httpd = socketserver.TCPServer(('::', PORT), ConfigHandler)
-            httpd.address_family = socket.AF_INET6
-            safe_print(f"HTTP服务器已启动，端口: {{PORT}} (仅IPv6模式)")
-            server_started = True
-        except Exception as ipv6_only_error:
-            safe_print(f"仅IPv6模式失败: {{ipv6_only_error}}")
-            
-            # 最后回退到IPv4
-            try:
-                httpd = socketserver.TCPServer(('0.0.0.0', PORT), ConfigHandler)
-                safe_print(f"HTTP服务器已启动，端口: {{PORT}} (IPv4模式)")
-                server_started = True
-            except Exception as ipv4_error:
-                safe_print(f"IPv4模式也失败: {{ipv4_error}}")
-    
-    if not server_started:
-        safe_print("所有网络模式都失败，无法启动HTTP服务器")
+    except Exception as e:
+        safe_print(f"IPv6服务器启动失败: {{{{e}}}}")
+        safe_print("请检查:")
+        safe_print("1. 系统是否支持IPv6")
+        safe_print("2. 端口是否被占用")
+        safe_print("3. IPv6是否被禁用")
         sys.exit(1)
     
     try:
@@ -3763,7 +3750,7 @@ if __name__ == "__main__":
         safe_print("服务器被用户中断")
         httpd.server_close()
     except Exception as e:
-        safe_print(f"服务器运行出错: {{e}}")
+        safe_print(f"服务器运行出错: {{{{e}}}}")
         sys.exit(1)
 '''
         
@@ -3774,6 +3761,9 @@ if __name__ == "__main__":
         subprocess.run(['chmod', '+x', server_file], check=True)
         
         # 创建服务器重启脚本
+        # 获取当前IPv6地址
+        current_ipv6 = get_ip_address() or 'IPv6地址'
+        
         restart_script = f'''#!/bin/bash
 # Hysteria2 配置服务器重启脚本
 
@@ -3795,9 +3785,7 @@ sleep 3
 if kill -0 $NEW_PID 2>/dev/null; then
     echo "✓ HTTP服务器启动成功 (PID: $NEW_PID)"
     echo "✓ 访问地址: http://localhost:{server_port}/"
-    if [ -n "{get_ip_address() or ''}" ]; then
-        echo "✓ IPv6访问: http://[{get_ip_address() or 'IPv6地址'}]:{server_port}/"
-    fi
+    echo "✓ IPv6访问: http://[{current_ipv6}]:{server_port}/"
 else
     echo "✗ HTTP服务器启动失败"
     echo "查看日志: cat {base_dir}/server.log"
@@ -3809,9 +3797,10 @@ fi
             f.write(restart_script)
         subprocess.run(['chmod', '+x', restart_file], check=True)
         
-        # 开放防火墙端口
-        subprocess.run(['sudo', 'iptables', '-A', 'INPUT', '-p', 'tcp', '--dport', str(server_port), '-j', 'ACCEPT'], check=False)
+        # 仅开放IPv6防火墙端口
+        safe_print("配置IPv6防火墙规则...")
         subprocess.run(['sudo', 'ip6tables', '-A', 'INPUT', '-p', 'tcp', '--dport', str(server_port), '-j', 'ACCEPT'], check=False)
+        # 不添加IPv4规则，确保仅IPv6访问
         
         safe_print("启动Python HTTP服务器...")
         
@@ -3824,24 +3813,21 @@ fi
         # 等待服务启动
         time.sleep(3)
         
-        # 验证服务是否启动
+        # 验证IPv6服务是否启动
         server_running = False
-        for protocol, address in [('IPv4', '127.0.0.1'), ('IPv6', '::1')]:
-            try:
-                import socket
-                if protocol == 'IPv4':
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                else:
-                    sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
-                sock.settimeout(2)
-                result = sock.connect_ex((address, server_port))
-                sock.close()
-                if result == 0:
-                    safe_print(f"HTTP服务器已启动，端口: {server_port} ({protocol})")
-                    server_running = True
-                    break
-            except Exception as e:
-                continue
+        try:
+            import socket
+            sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+            sock.settimeout(3)
+            result = sock.connect_ex(('::1', server_port))
+            sock.close()
+            if result == 0:
+                safe_print(f"✓ HTTP服务器已启动，端口: {server_port} (仅IPv6模式)")
+                server_running = True
+            else:
+                safe_print(f"✗ IPv6连接测试失败，连接码: {result}")
+        except Exception as e:
+            safe_print(f"✗ IPv6连接测试异常: {e}")
         
         if not server_running:
             # 检查进程是否还在运行
@@ -3891,13 +3877,14 @@ fi
                 safe_print("2. 服务器IPv6配置")
                 safe_print("3. 网络连接")
         
-        safe_print(f"本地访问地址: http://localhost:{server_port}/")
+        safe_print(f"IPv6本地访问: http://[::1]:{server_port}/")
+        safe_print("注意: 此服务器仅支持IPv6访问，不支持IPv4")
         
-        # 显示防火墙检查命令
-        safe_print(f"检查防火墙命令:")
-        safe_print(f"  IPv4: iptables -L INPUT | grep {server_port}")
-        safe_print(f"  IPv6: ip6tables -L INPUT | grep {server_port}")
-        safe_print(f"检查端口监听: ss -tlnp | grep :{server_port}")
+        # 显示IPv6专用检查命令
+        safe_print(f"检查命令:")
+        safe_print(f"  IPv6防火墙: ip6tables -L INPUT | grep {server_port}")
+        safe_print(f"  IPv6监听: ss -6 -tlnp | grep :{server_port}")
+        safe_print(f"  IPv6测试: curl -6 http://[::1]:{server_port}/")
         
         # 提供重启服务器的建议
         safe_print("\n如果需要重启服务器，请执行:")
