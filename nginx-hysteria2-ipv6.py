@@ -3107,17 +3107,17 @@ def enable_bbr_optimization():
     try:
         safe_print("正在启用BBR拥塞控制算法...")
         
-        # 检查当前IPv6拥塞控制算法
+        # 检查当前TCP拥塞控制算法
         try:
-            with open('/proc/sys/net/ipv6/tcp_congestion_control', 'r') as f:
-                current_cc_v6 = f.read().strip()
-            safe_print(f"当前IPv6拥塞控制算法: {current_cc_v6}")
+            with open('/proc/sys/net/ipv4/tcp_congestion_control', 'r') as f:
+                current_cc = f.read().strip()
+            safe_print(f"当前TCP拥塞控制算法: {current_cc}")
             
-            if current_cc_v6 == 'bbr':
-                safe_print("BBR已经在IPv6上启用")
+            if current_cc == 'bbr':
+                safe_print("BBR已经启用（适用于IPv4和IPv6）")
                 return True
         except:
-            safe_print("无法检查IPv6 BBR状态，系统可能不支持IPv6")
+            safe_print("无法检查BBR状态")
             pass
         
         # 检查内核版本
@@ -3148,21 +3148,21 @@ def enable_bbr_optimization():
         except:
             pass
         
-        # 配置BBR - 纯IPv6版本
-        bbr_config = """# BBR拥塞控制优化配置 - 纯IPv6版本
+        # 配置BBR - 针对IPv6优化（使用实际存在的内核参数）
+        bbr_config = """# BBR拥塞控制优化配置 - IPv6优化版本
+# BBR拥塞控制（对IPv4和IPv6都有效）
 net.core.default_qdisc = fq
-net.ipv6.tcp_congestion_control = bbr
+net.ipv4.tcp_congestion_control = bbr
 
-# IPv6网络性能优化
+# 网络性能优化
 net.core.rmem_max = 134217728
 net.core.wmem_max = 134217728
 net.core.netdev_max_backlog = 5000
 
-# IPv6 TCP优化
-net.ipv6.tcp_rmem = 4096 87380 134217728
-net.ipv6.tcp_wmem = 4096 65536 134217728
-net.ipv6.tcp_mtu_probing = 1
-net.ipv6.tcp_congestion_control = bbr
+# TCP优化（IPv4/IPv6通用）
+net.ipv4.tcp_rmem = 4096 87380 134217728
+net.ipv4.tcp_wmem = 4096 65536 134217728
+net.ipv4.tcp_mtu_probing = 1
 
 # IPv6特定优化
 net.ipv6.conf.all.disable_ipv6 = 0
@@ -3180,13 +3180,10 @@ net.core.wmem_default = 262144
 net.core.wmem_max = 16777216
 net.core.netdev_max_backlog = 5000
 
-# IPv6 UDP缓冲区优化
-net.ipv6.udp_rmem_min = 8192
-net.ipv6.udp_wmem_min = 8192
-
-# 禁用IPv4以确保纯IPv6环境
-net.ipv4.conf.all.disable_ipv4 = 1
-net.ipv4.conf.default.disable_ipv4 = 1
+# UDP内存优化
+net.ipv4.udp_rmem_min = 8192
+net.ipv4.udp_wmem_min = 8192
+net.ipv4.udp_mem = 102400 873800 16777216
 """
         
         # 写入sysctl配置
@@ -3211,35 +3208,33 @@ net.ipv4.conf.default.disable_ipv4 = 1
         except Exception as e:
             safe_print(f"应用BBR配置失败: {e}")
         
-        # 立即启用IPv6 BBR
+        # 立即启用BBR
         try:
             subprocess.run(['sudo', 'sysctl', '-w', 'net.core.default_qdisc=fq'], check=True)
-            subprocess.run(['sudo', 'sysctl', '-w', 'net.ipv6.tcp_congestion_control=bbr'], check=True)
-            # 禁用IPv4
-            subprocess.run(['sudo', 'sysctl', '-w', 'net.ipv4.conf.all.disable_ipv4=1'], check=False)
-            safe_print("BBR已在IPv6上立即生效，IPv4已禁用")
+            subprocess.run(['sudo', 'sysctl', '-w', 'net.ipv4.tcp_congestion_control=bbr'], check=True)
+            safe_print("BBR拥塞控制已立即生效（适用于IPv4和IPv6）")
         except Exception as e:
-            safe_print(f"立即启用IPv6 BBR失败: {e}")
+            safe_print(f"立即启用BBR失败: {e}")
         
-        # 验证IPv6 BBR是否启用
+        # 验证BBR是否启用
         try:
-            with open('/proc/sys/net/ipv6/tcp_congestion_control', 'r') as f:
-                current_cc_v6 = f.read().strip()
+            with open('/proc/sys/net/ipv4/tcp_congestion_control', 'r') as f:
+                current_cc = f.read().strip()
             
-            if current_cc_v6 == 'bbr':
-                safe_print("BBR拥塞控制算法在IPv6上启用成功！")
+            if current_cc == 'bbr':
+                safe_print("✓ BBR拥塞控制算法启用成功！（适用于IPv4和IPv6）")
                 
-                # 显示可用的IPv6拥塞控制算法
+                # 显示可用的拥塞控制算法
                 try:
-                    with open('/proc/sys/net/ipv6/tcp_available_congestion_control', 'r') as f:
-                        available_cc_v6 = f.read().strip()
-                    safe_print(f"IPv6可用算法: {available_cc_v6}")
+                    with open('/proc/sys/net/ipv4/tcp_available_congestion_control', 'r') as f:
+                        available_cc = f.read().strip()
+                    safe_print(f"可用拥塞控制算法: {available_cc}")
                 except:
                     pass
                 
                 return True
             else:
-                safe_print(f"BBR启用失败，当前IPv6算法: {current_cc_v6}")
+                safe_print(f"BBR启用失败，当前算法: {current_cc}")
                 return False
                 
         except Exception as e:
