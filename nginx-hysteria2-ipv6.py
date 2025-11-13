@@ -359,7 +359,7 @@ def format_ipv6_for_url(ip_address):
         # IPv6地址需要用方括号括起来
         return f"[{ip_address}]"
     else:
-        # IPv4地址或域名直接返回
+        # 域名直接返回（纯IPv6版本不支持IPv4地址）
         return ip_address
 
 def get_ip_address():
@@ -984,7 +984,7 @@ def create_config(base_dir, port, password, cert_path, key_path, domain, enable_
     
     # 端口跳跃配置 (Port Hopping)
     if enable_port_hopping:
-        # Hysteria2服务器端只监听单个端口，端口跳跃通过iptables DNAT实现
+        # Hysteria2服务器端只监听单个端口，端口跳跃通过ip6tables DNAT实现
         port_start = max(1024, port - 25)  
         port_end = min(65535, port + 25)
         
@@ -1169,7 +1169,7 @@ fi
 def delete_hysteria2():
     """完整删除Hysteria2安装的5步流程"""
     safe_print("开始完整删除Hysteria2...")
-    safe_print("删除流程: 停止服务 → 清理iptables → 清理nginx → 删除目录 → 清理服务")
+    safe_print("删除流程: 停止服务 → 清理ip6tables → 清理nginx → 删除目录 → 清理服务")
     
     home = get_user_home()
     base_dir = f"{home}/.hysteria2"
@@ -1224,8 +1224,8 @@ def delete_hysteria2():
     except Exception as e:
         safe_print(f"停止服务失败: {e}")
     
-    # 2. 清理iptables规则
-    safe_print("\n步骤2: 清理iptables规则")
+    # 2. 清理ip6tables规则
+    safe_print("\n步骤2: 清理ip6tables规则")
     try:
         port_ranges = []
         
@@ -1258,7 +1258,7 @@ def delete_hysteria2():
         ]
         port_ranges.extend(common_ranges)
         
-        # 清理iptables规则
+        # 清理ip6tables规则
         for port_start, port_end, listen_port in port_ranges:
             try:
                 # 删除IPv6 NAT规则
@@ -1295,10 +1295,10 @@ def delete_hysteria2():
             except:
                 pass
         
-        safe_print("iptables规则清理完成")
+        safe_print("ip6tables规则清理完成")
         
     except Exception as e:
-        safe_print(f"清理iptables规则失败: {e}")
+        safe_print(f"清理ip6tables规则失败: {e}")
     
     # 3. 清理nginx配置
     safe_print("\n步骤3: 清理nginx配置")
@@ -1404,7 +1404,7 @@ Hysteria2完全删除完成！
 
 已清理的内容:
 - Hysteria2服务进程
-- iptables端口跳跃规则
+- ip6tables端口跳跃规则
 - nginx配置文件
 - 安装目录: {base_dir}
 - 系统服务文件
@@ -1513,9 +1513,13 @@ def start_service(start_script, port, base_dir):
 def show_help():
     """显示帮助信息"""
     safe_print("""
-Hysteria2 一键部署工具 (防墙增强版)
+Hysteria2 一键部署工具 (纯IPv6版本 - 防墙增强版)
 
-重要说明：Hysteria2基于UDP/QUIC协议，支持端口跳跃、混淆和HTTP/3伪装！
+重要说明：
+- 这是纯IPv6版本，只支持IPv6网络环境
+- Hysteria2基于UDP/QUIC协议，支持端口跳跃、混淆和HTTP/3伪装
+- 自动启用IPv6优化和BBR拥塞控制算法
+- 禁用IPv4以确保纯IPv6环境
 
 使用方法:
     python3 hy2.py [命令] [选项]
@@ -1958,9 +1962,9 @@ nginx设置成功！
 - UDP {443 if ':443' in config['listen'] else config['listen'].replace(':', '')}端口: Hysteria2代理服务
 
 测试命令:
-curl https://{domain}
+curl https://[{domain}] 或 curl https://{domain}  # IPv6地址需要方括号
 或
-curl -k https://{domain}  # 如果使用自签名证书
+curl -k https://[{domain}] 或 curl -k https://{domain}  # 如果使用自签名证书
 
 重要: 确保防火墙已开放UDP端口用于Hysteria2！
 """)
@@ -2142,8 +2146,8 @@ HTTP 80端口显示伪装网站
 HTTPS 443端口显示伪装网站
 
 测试命令:
-curl http://{domain}      # HTTP访问
-curl -k https://{domain}  # HTTPS访问
+curl http://[{domain}] 或 curl http://{domain}      # HTTP IPv6访问
+curl -k https://[{domain}] 或 curl -k https://{domain}  # HTTPS IPv6访问
 
 现在外界访问你的服务器会看到一个正常的企业网站！
 """)
@@ -2325,7 +2329,7 @@ curl -k https://{domain}  # HTTPS访问
             
             if "_port_hopping" in config:
                 ph_info = config["_port_hopping"]
-                setup_port_hopping_iptables(
+                setup_port_hopping_ip6tables(
                     ph_info["range_start"], 
                     ph_info["range_end"], 
                     ph_info["listen_port"]
@@ -2411,7 +2415,9 @@ curl -k https://{domain}  # HTTPS访问
             params.append(f"obfs=salamander")
             params.append(f"obfs-password={urllib.parse.quote(args.obfs_password)}")
         
-        config_link = f"hysteria2://{urllib.parse.quote(password)}@{server_address}:{port}?{'&'.join(params)}"
+        # 格式化IPv6地址用于URL
+        formatted_address = format_ipv6_for_url(server_address)
+        config_link = f"hysteria2://{urllib.parse.quote(password)}@{formatted_address}:{port}?{'&'.join(params)}"
         
         safe_print(f"""
 Hysteria2 防墙增强版安装成功！
@@ -2472,7 +2478,7 @@ Web页面伪装 (TCP端口显示正常网站)
 {'高速模式: 无额外防护' if not args.port_hopping and not args.obfs_password and not args.http3_masquerade and not nginx_success else ''}
 
 快速测试:
-{'TCP测试: curl https://' + server_address + '  # 应显示伪装网站' if nginx_success else ''}
+{'TCP测试: curl https://' + format_ipv6_for_url(server_address) + '  # 应显示伪装网站' if nginx_success else ''}
 UDP测试: 使用客户端连接验证Hysteria2服务
 
 进一步优化建议:
@@ -2497,10 +2503,10 @@ UDP测试: 使用客户端连接验证Hysteria2服务
         show_help()
         sys.exit(1)
 
-def setup_port_hopping_iptables(port_start, port_end, listen_port):
-    """配置iptables实现端口跳跃"""
+def setup_port_hopping_ip6tables(port_start, port_end, listen_port):
+    """配置ip6tables实现IPv6端口跳跃"""
     try:
-        safe_print(f"配置iptables端口跳跃...")
+        safe_print(f"配置ip6tables IPv6端口跳跃...")
         safe_print(f"端口范围: {port_start}-{port_end} -> {listen_port}")
         
         # 检查iptables是否可用
@@ -2684,7 +2690,7 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
             port_start = 1024
             port_end = 1074
     
-    success = setup_port_hopping_iptables(port_start, port_end, port)
+    success = setup_port_hopping_ip6tables(port_start, port_end, port)
     if success:
         safe_print(f"端口跳跃：{port_start}-{port_end} → {port}")
     
@@ -2724,7 +2730,7 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
     # 如果启用了端口跳跃，生成额外的JSON配置
     if port_range:
         port_hopping_config = {
-            "server": server_address,
+            "server": format_ipv6_for_url(server_address),
             "auth": password,
             "obfs": {
                 "type": "salamander",
@@ -2747,12 +2753,13 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
     # 12. 输出部署结果
     if port_range:
         # 准备下载链接
+        formatted_server = format_ipv6_for_url(server_address)
         download_links = {
-            "v2rayN多端口订阅 (推荐)": f"http://{server_address}:8080/v2rayn-subscription.txt",
-            "多端口配置明文查看": f"http://{server_address}:8080/multi-port-links.txt",
-            "Clash多端口配置": f"http://{server_address}:8080/clash.yaml", 
-            "官方客户端配置": f"http://{server_address}:8080/hysteria-official.yaml",
-            "JSON配置 (完整功能)": f"http://{server_address}:8080/hysteria2.json"
+            "v2rayN多端口订阅 (推荐)": f"http://{formatted_server}:8080/v2rayn-subscription.txt",
+            "多端口配置明文查看": f"http://{formatted_server}:8080/multi-port-links.txt",
+            "Clash多端口配置": f"http://{formatted_server}:8080/clash.yaml", 
+            "官方客户端配置": f"http://{formatted_server}:8080/hysteria-official.yaml",
+            "JSON配置 (完整功能)": f"http://{formatted_server}:8080/hysteria2.json"
         }
         
         # 生成多端口配置（v2rayN和Clash使用相同的端口列表）
@@ -2801,7 +2808,7 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
 # 注意：v2rayN不支持端口跳跃功能，只能使用服务器的主监听端口
 # 使用方法：将此配置导入v2rayN客户端
 
-server: {server_address}:{port}
+server: {format_ipv6_for_url(server_address)}:{port}
 auth: {password}
 
 obfs:
@@ -2829,7 +2836,7 @@ http:
 # 支持端口跳跃功能，提供更好的防封锁能力
 # 使用方法：保存为 config.yaml，然后运行 hysteria client -c config.yaml
 
-server: {server_address}:{port}
+server: {format_ipv6_for_url(server_address)}:{port}
 auth: {password}
 
 transport:
@@ -2858,7 +2865,7 @@ http:
 
 # 端口跳跃说明：
 # Hysteria2端口跳跃有两种实现方式：
-# 1. 服务器端iptables DNAT: 将{port_start}-{port_end}流量转发到{port}
+# 1. 服务器端ip6tables DNAT: 将{port_start}-{port_end} IPv6流量转发到{port}
 # 2. 客户端多端口连接: 客户端在{port_start}-{port_end}范围内随机选择端口连接
 # 
 # 当前配置使用方式1，保持客户端配置简洁
@@ -2875,7 +2882,7 @@ http:
             clash_proxy_names.append(node_name)
             clash_proxies.append(f"""  - name: "{node_name}"
     type: hysteria2
-    server: {server_address}
+    server: {format_ipv6_for_url(server_address)}
     port: {port_num}
     password: "{password}"
     obfs: salamander
@@ -2926,7 +2933,7 @@ rules:
 # 这个配置让客户端真正实现端口跳跃（随机选择端口连接）
 # 使用方法：保存为 hopping.yaml，运行 hysteria client -c hopping.yaml
 
-server: {server_address}:{port_start}-{port_end}
+server: {format_ipv6_for_url(server_address)}:{port_start}-{port_end}
 auth: {password}
 
 transport:
@@ -3100,16 +3107,17 @@ def enable_bbr_optimization():
     try:
         safe_print("正在启用BBR拥塞控制算法...")
         
-        # 检查当前拥塞控制算法
+        # 检查当前IPv6拥塞控制算法
         try:
-            with open('/proc/sys/net/ipv4/tcp_congestion_control', 'r') as f:
-                current_cc = f.read().strip()
-            safe_print(f"当前拥塞控制算法: {current_cc}")
+            with open('/proc/sys/net/ipv6/tcp_congestion_control', 'r') as f:
+                current_cc_v6 = f.read().strip()
+            safe_print(f"当前IPv6拥塞控制算法: {current_cc_v6}")
             
-            if current_cc == 'bbr':
-                safe_print("BBR已经启用")
+            if current_cc_v6 == 'bbr':
+                safe_print("BBR已经在IPv6上启用")
                 return True
         except:
+            safe_print("无法检查IPv6 BBR状态，系统可能不支持IPv6")
             pass
         
         # 检查内核版本
@@ -3140,26 +3148,45 @@ def enable_bbr_optimization():
         except:
             pass
         
-        # 配置BBR
-        bbr_config = """# BBR拥塞控制优化配置
+        # 配置BBR - 纯IPv6版本
+        bbr_config = """# BBR拥塞控制优化配置 - 纯IPv6版本
 net.core.default_qdisc = fq
-net.ipv4.tcp_congestion_control = bbr
+net.ipv6.tcp_congestion_control = bbr
 
-# 网络性能优化
+# IPv6网络性能优化
 net.core.rmem_max = 134217728
 net.core.wmem_max = 134217728
 net.core.netdev_max_backlog = 5000
-net.ipv4.tcp_rmem = 4096 87380 134217728
-net.ipv4.tcp_wmem = 4096 65536 134217728
-net.ipv4.tcp_mtu_probing = 1
-net.ipv4.tcp_congestion_control = bbr
 
-# UDP优化（Hysteria2使用UDP）
+# IPv6 TCP优化
+net.ipv6.tcp_rmem = 4096 87380 134217728
+net.ipv6.tcp_wmem = 4096 65536 134217728
+net.ipv6.tcp_mtu_probing = 1
+net.ipv6.tcp_congestion_control = bbr
+
+# IPv6特定优化
+net.ipv6.conf.all.disable_ipv6 = 0
+net.ipv6.conf.default.disable_ipv6 = 0
+net.ipv6.conf.lo.disable_ipv6 = 0
+net.ipv6.conf.all.accept_ra = 1
+net.ipv6.conf.default.accept_ra = 1
+net.ipv6.conf.all.forwarding = 1
+net.ipv6.conf.default.forwarding = 1
+
+# UDP优化（Hysteria2使用UDP IPv6）
 net.core.rmem_default = 262144
 net.core.rmem_max = 16777216
 net.core.wmem_default = 262144
 net.core.wmem_max = 16777216
 net.core.netdev_max_backlog = 5000
+
+# IPv6 UDP缓冲区优化
+net.ipv6.udp_rmem_min = 8192
+net.ipv6.udp_wmem_min = 8192
+
+# 禁用IPv4以确保纯IPv6环境
+net.ipv4.conf.all.disable_ipv4 = 1
+net.ipv4.conf.default.disable_ipv4 = 1
 """
         
         # 写入sysctl配置
@@ -3184,33 +3211,35 @@ net.core.netdev_max_backlog = 5000
         except Exception as e:
             safe_print(f"应用BBR配置失败: {e}")
         
-        # 立即启用BBR
+        # 立即启用IPv6 BBR
         try:
             subprocess.run(['sudo', 'sysctl', '-w', 'net.core.default_qdisc=fq'], check=True)
-            subprocess.run(['sudo', 'sysctl', '-w', 'net.ipv4.tcp_congestion_control=bbr'], check=True)
-            safe_print("BBR已立即生效")
+            subprocess.run(['sudo', 'sysctl', '-w', 'net.ipv6.tcp_congestion_control=bbr'], check=True)
+            # 禁用IPv4
+            subprocess.run(['sudo', 'sysctl', '-w', 'net.ipv4.conf.all.disable_ipv4=1'], check=False)
+            safe_print("BBR已在IPv6上立即生效，IPv4已禁用")
         except Exception as e:
-            safe_print(f"立即启用BBR失败: {e}")
+            safe_print(f"立即启用IPv6 BBR失败: {e}")
         
-        # 验证BBR是否启用
+        # 验证IPv6 BBR是否启用
         try:
-            with open('/proc/sys/net/ipv4/tcp_congestion_control', 'r') as f:
-                current_cc = f.read().strip()
+            with open('/proc/sys/net/ipv6/tcp_congestion_control', 'r') as f:
+                current_cc_v6 = f.read().strip()
             
-            if current_cc == 'bbr':
-                safe_print("BBR拥塞控制算法启用成功！")
+            if current_cc_v6 == 'bbr':
+                safe_print("BBR拥塞控制算法在IPv6上启用成功！")
                 
-                # 显示可用的拥塞控制算法
+                # 显示可用的IPv6拥塞控制算法
                 try:
-                    with open('/proc/sys/net/ipv4/tcp_available_congestion_control', 'r') as f:
-                        available_cc = f.read().strip()
-                    safe_print(f"可用算法: {available_cc}")
+                    with open('/proc/sys/net/ipv6/tcp_available_congestion_control', 'r') as f:
+                        available_cc_v6 = f.read().strip()
+                    safe_print(f"IPv6可用算法: {available_cc_v6}")
                 except:
                     pass
                 
                 return True
             else:
-                safe_print(f"BBR启用失败，当前算法: {current_cc}")
+                safe_print(f"BBR启用失败，当前IPv6算法: {current_cc_v6}")
                 return False
                 
         except Exception as e:
@@ -3592,10 +3621,15 @@ show_config_info() {{
     
     echo ""
     echo "配置文件下载地址:"
-    echo "v2rayN多端口订阅: http://$SERVER_ADDRESS:8080/v2rayn-subscription.txt"
-    echo "多端口配置明文: http://$SERVER_ADDRESS:8080/multi-port-links.txt"
-    echo "Clash多端口配置: http://$SERVER_ADDRESS:8080/clash.yaml"
-    echo "官方客户端配置: http://$SERVER_ADDRESS:8080/hysteria2.json"
+    # 格式化IPv6地址（如果包含冒号则加方括号）
+    FORMATTED_SERVER="$SERVER_ADDRESS"
+    if [[ "$SERVER_ADDRESS" == *":"* ]]; then
+        FORMATTED_SERVER="[$SERVER_ADDRESS]"
+    fi
+    echo "v2rayN多端口订阅: http://$FORMATTED_SERVER:8080/v2rayn-subscription.txt"
+    echo "多端口配置明文: http://$FORMATTED_SERVER:8080/multi-port-links.txt"
+    echo "Clash多端口配置: http://$FORMATTED_SERVER:8080/clash.yaml"
+    echo "官方客户端配置: http://$FORMATTED_SERVER:8080/hysteria2.json"
     
     echo ""
     echo "本地配置文件:"
