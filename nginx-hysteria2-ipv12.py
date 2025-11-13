@@ -373,46 +373,19 @@ def format_ipv6_for_url(ip_address):
         return ip_address
 
 def get_ip_address():
-    """获取本机IPv6地址（仅IPv6模式，禁用IPv4）"""
-    # 仅IPv6模式 - 强制只使用IPv6地址
-    safe_print("仅IPv6模式已启用 - 禁用IPv4，只使用IPv6")
+    """获取IPv6地址，优先使用用户指定的地址，不从系统自动检测"""
+    # 优先使用命令行参数中的IPv6地址，不从系统检测
+    if hasattr(get_ip_address, 'custom_ipv6') and get_ip_address.custom_ipv6:
+        safe_print(f"使用用户指定的IPv6地址: {get_ip_address.custom_ipv6}")
+        return get_ip_address.custom_ipv6
     
-    # 首先尝试获取公网IPv6
-    try:
-        # 尝试从公共API获取公网IPv6
-        with urllib.request.urlopen('https://api6.ipify.org', timeout=5) as response:
-            public_ip = response.read().decode('utf-8')
-            if public_ip and len(public_ip) > 0 and ':' in public_ip:
-                safe_print(f"检测到公网IPv6地址: {public_ip}")
-                return public_ip
-    except:
-        try:
-            # 备选IPv6 API
-            with urllib.request.urlopen('https://ipv6.icanhazip.com', timeout=5) as response:
-                public_ip = response.read().decode('utf-8').strip()
-                if public_ip and len(public_ip) > 0 and ':' in public_ip:
-                    safe_print(f"检测到公网IPv6地址: {public_ip}")
-                    return public_ip
-        except:
-            pass
-
-    # 如果获取公网IPv6失败，尝试获取本地IPv6
-    try:
-        s = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
-        # 连接到IPv6 DNS服务器获取本地IPv6地址
-        s.connect(('2001:4860:4860::8888', 80))
-        local_ip = s.getsockname()[0]
-        s.close()
-        if ':' in local_ip and not local_ip.startswith('::1'):
-            safe_print(f"检测到本地IPv6地址: {local_ip}")
-            return local_ip
-    except:
-        pass
-        
-    # 强制仅IPv6：如果无法获取有效IPv6，返回回环地址但给出警告
-    safe_print("警告: 无法获取有效的IPv6地址，使用IPv6回环地址")
-    safe_print("建议检查网络设置确保IPv6连接可用")
-    return '::1'
+    # 如果没有指定的IPv6地址，返回 None，不从系统检测
+    safe_print("警告: 未指定用户自定义的IPv6地址，将无法正常工作")
+    return None
+    
+    # 以下代码被禁用，不再从系统自动获取IPv6
+    # 原来会从 api6.ipify.org 或 ipv6.icanhazip.com 获取公网IPv6
+    # 现在仅使用用户在命令行中指定的IPv6地址
 
 def setup_nginx_smart_proxy(base_dir, domain, web_dir, cert_path, key_path, hysteria_port):
     """设置nginx Web伪装：TCP端口显示正常网站，UDP端口用于Hysteria2"""
@@ -2754,9 +2727,16 @@ UDP测试: 使用客户端连接验证Hysteria2服务
         sys.exit(1)
 
 def setup_port_hopping_ip6tables(port_start, port_end, listen_port):
-    """配置ip6tables实现IPv6端口跳跃（仅IPv6模式）"""
+    """配置ip6tables实现IPv6端口跳跃（仅IPv6模式，使用用户指定的IPv6）"""
     try:
+        # 获取用户指定的IPv6地址
+        user_ipv6 = get_ip_address()
+        if not user_ipv6:
+            safe_print("错误: 未指定用户自定义的IPv6地址，无法配置端口跳跃")
+            return False
+            
         safe_print(f"配置ip6tables IPv6端口跳跃（仅IPv6模式）...")
+        safe_print(f"使用用户指定的IPv6地址: {user_ipv6}")
         safe_print(f"端口范围: {port_start}-{port_end} -> {listen_port}")
         safe_print("仅IPv6分流: 禁用IPv4，强制IPv6出站")
         
@@ -3724,48 +3704,124 @@ class IPv6OnlyTCPServer(socketserver.TCPServer):
                 self.server_close()
                 raise
 
+def check_ipv6_support():
+    """检查系统 IPv6 支持"""
+    try:
+        # 检查IPv6是否被禁用
+        try:
+            with open('/proc/sys/net/ipv6/conf/all/disable_ipv6', 'r') as f:
+                if f.read().strip() == '1':
+                    return False, "IPv6在系统级别被禁用"
+        except FileNotFoundError:
+            pass  # 某些系统可能没有此文件
+        
+        # 尝试创建IPv6 socket
+        test_socket = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+        test_socket.close()
+        return True, "IPv6支持正常"
+    except OSError as e:
+        if e.errno == -9 or 'Address family' in str(e):
+            return False, f"IPv6地址族不受支持: {e}"
+        return False, f"IPv6检查失败: {e}"
+    except Exception as e:
+        return False, f"IPv6检查异常: {e}"
+
+def enable_ipv6():
+    """尝试启用IPv6"""
+    try:
+        import subprocess
+        # 启用IPv6
+        subprocess.run(['sysctl', '-w', 'net.ipv6.conf.all.disable_ipv6=0'], 
+                      capture_output=True, check=False)
+        subprocess.run(['sysctl', '-w', 'net.ipv6.conf.default.disable_ipv6=0'], 
+                      capture_output=True, check=False)
+        return True
+    except Exception:
+        return False
+
 if __name__ == "__main__":
     PORT = {server_port}
     
-    # 仅IPv6模式 - 不支持IPv4
-    try:
-        safe_print(f"尝试绑定IPv6地址 '::', 端口: {server_port}")
+    # 检查IPv6支持
+    ipv6_ok, ipv6_msg = check_ipv6_support()
+    if not ipv6_ok:
+        safe_print(f"⚠ IPv6检查失败: {{ipv6_msg}}")
+        safe_print("尝试启用IPv6...")
+        if enable_ipv6():
+            safe_print("✓ IPv6启用成功，重新检查...")
+            ipv6_ok, ipv6_msg = check_ipv6_support()
         
-        # 创建仅IPv6服务器
-        httpd = socketserver.TCPServer(('::', PORT), ConfigHandler)
-        httpd.address_family = socket.AF_INET6
-        
-        # 确保仅使用IPv6，禁用IPv4
-        try:
-            httpd.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
-            safe_print("✓ IPv6_V6ONLY 设置成功")
-        except Exception as sock_err:
-            safe_print(f"⚠ IPv6_V6ONLY 设置失败: {{sock_err}}")
-        
-        safe_print(f"HTTP服务器已启动，端口: {server_port} (仅IPv6模式)")
-        safe_print(f"绑定地址: [::]:{server_port}")
-        
-    except PermissionError:
-        safe_print("IPv6服务器启动失败: 权限不足")
-        safe_print("请使用 sudo 运行或选择大于1024的端口")
-        sys.exit(1)
-    except OSError as os_err:
-        if 'Address already in use' in str(os_err):
-            safe_print(f"IPv6服务器启动失败: 端口{server_port}已被占用")
-            safe_print(f"请检查: ss -6 -tlnp | grep :{server_port}")
-        elif 'Cannot assign requested address' in str(os_err):
-            safe_print("IPv6服务器启动失败: 无法绑定IPv6地址")
-            safe_print("请检查: cat /proc/sys/net/ipv6/conf/all/disable_ipv6")
+        if not ipv6_ok:
+            safe_print(f"✗ IPv6仍然不可用: {{ipv6_msg}}")
+            safe_print("回退到IPv4模式...")
+            try:
+                # 在IPv6不支持情况下，依然尝试使用IPv6所有接口
+                ipv6_addr = '{get_ip_address() or "::"}'  # 使用用户指定的IPv6地址
+                httpd = socketserver.TCPServer((ipv6_addr, PORT), ConfigHandler)
+                httpd.address_family = socket.AF_INET6
+                safe_print(f"HTTP服务器已启动，端口: {server_port} (指定IPv6地址)")
+            except Exception as fallback_err:
+                safe_print(f"✗ IPv4回退也失败: {{fallback_err}}")
+                sys.exit(1)
         else:
-            safe_print(f"IPv6服务器启动失败: {{os_err}}")
-        sys.exit(1)
-    except Exception as e:
-        safe_print(f"IPv6服务器启动失败: {{e}}")
-        safe_print("请检查:")
-        safe_print("1. 系统是否支持IPv6: ip -6 addr show")
-        safe_print("2. IPv6是否启用: cat /proc/sys/net/ipv6/conf/all/disable_ipv6")
-        safe_print(f"3. 端口是否可用: ss -6 -tlnp | grep :{server_port}")
-        sys.exit(1)
+            safe_print(f"✓ {{ipv6_msg}}")
+    
+    # 如果IPv6可用，启动IPv6服务器
+    if ipv6_ok:
+        try:
+            # 使用用户指定的IPv6地址
+            user_ipv6 = "{get_ip_address()}"  # 这将被Python的f-string替换为实际地址
+            if not user_ipv6 or user_ipv6 == "None":
+                safe_print("错误: 未指定用户自定义的IPv6地址")
+                sys.exit(1)
+            
+            safe_print(f"尝试绑定IPv6地址 '{{user_ipv6}}', 端口: {server_port}")
+            
+            # 创建仅IPv6服务器，绑定到指定IPv6地址  
+            httpd = socketserver.TCPServer((user_ipv6, PORT), ConfigHandler)
+            httpd.address_family = socket.AF_INET6
+            
+            # 确保仅使用IPv6，禁用IPv4
+            try:
+                httpd.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+                safe_print("✓ IPv6_V6ONLY 设置成功")
+            except Exception as sock_err:
+                safe_print(f"⚠ IPv6_V6ONLY 设置失败: {{sock_err}}")
+            
+            safe_print(f"HTTP服务器已启动，端口: {server_port} (仅IPv6模式)")
+            safe_print(f"绑定地址: [{{user_ipv6}}]:{server_port}")
+            
+        except PermissionError:
+            safe_print("IPv6服务器启动失败: 权限不足")
+            safe_print("请使用 sudo 运行或选择大于1024的端口")
+            sys.exit(1)
+        except OSError as os_err:
+            if 'Address already in use' in str(os_err):
+                safe_print(f"IPv6服务器启动失败: 端口{server_port}已被占用")
+                safe_print(f"请检查: ss -6 -tlnp | grep :{server_port}")
+            elif 'Cannot assign requested address' in str(os_err):
+                safe_print("IPv6服务器启动失败: 无法绑定IPv6地址")
+                safe_print("请检查: cat /proc/sys/net/ipv6/conf/all/disable_ipv6")
+            elif 'Address family' in str(os_err) or os_err.errno == -9:
+                safe_print(f"IPv6地址族不支持，回退到IPv4: {{os_err}}")
+                try:
+                    # 回退到绑定所有IPv6接口
+                    httpd = socketserver.TCPServer(('::', PORT), ConfigHandler)
+                    httpd.address_family = socket.AF_INET6
+                    safe_print(f"HTTP服务器已启动，端口: {server_port} (IPv6所有接口模式)")
+                except Exception as fallback_err:
+                    safe_print(f"✗ IPv4回退也失败: {{fallback_err}}")
+                    sys.exit(1)
+            else:
+                safe_print(f"IPv6服务器启动失败: {{os_err}}")
+                sys.exit(1)
+        except Exception as e:
+            safe_print(f"IPv6服务器启动失败: {{e}}")
+            safe_print("请检查:")
+            safe_print("1. 系统是否支持IPv6: ip -6 addr show")
+            safe_print("2. IPv6是否启用: cat /proc/sys/net/ipv6/conf/all/disable_ipv6")
+            safe_print(f"3. 端口是否可用: ss -6 -tlnp | grep :{server_port}")
+            sys.exit(1)
     
     try:
         httpd.serve_forever()
@@ -3852,6 +3908,7 @@ fi
             safe_print("检查IPv6端口状态...")
             
             # 使用ss命令检查端口监听
+            server_running = False
             try:
                 port_check = subprocess.run(['ss', '-6', '-tlnp'], 
                                           capture_output=True, text=True, timeout=5)
@@ -3872,21 +3929,33 @@ fi
             
             # 如果端口监听成功，再测试连接
             if server_running:
-                try:
-                    import socket
-                    sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
-                    sock.settimeout(3)
-                    result = sock.connect_ex(('::1', server_port))
-                    sock.close()
-                    if result == 0:
-                        safe_print(f"✓ HTTP服务器连接测试成功")
-                    else:
-                        safe_print(f"⚠ IPv6连接测试失败，连接码: {result}")
-                        if result == 111:
-                            safe_print("原因: 连接被拒绝，可能是防火墙或服务未正常启动")
-                except Exception as e:
-                    safe_print(f"⚠ IPv6连接测试异常: {e}")
-                    
+                # 仅测试用户指定的IPv6地址，不测试本地地址
+                user_ipv6 = get_ip_address()
+                test_addresses = [user_ipv6] if user_ipv6 else []
+                
+                connection_ok = False
+                for test_addr in test_addresses:
+                    if not test_addr:
+                        continue
+                    try:
+                        import socket
+                        sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+                        sock.settimeout(3)
+                        result = sock.connect_ex((test_addr, server_port))
+                        sock.close()
+                        if result == 0:
+                            safe_print(f"✓ HTTP服务器连接测试成功 ({test_addr})")
+                            connection_ok = True
+                            break
+                        else:
+                            safe_print(f"⚠ IPv6地址 {test_addr} 连接失败，连接码: {result}")
+                    except Exception as e:
+                        safe_print(f"⚠ IPv6地址 {test_addr} 测试异常: {e}")
+                
+                if not connection_ok:
+                    safe_print("⚠ 所有IPv6地址连接测试都失败")
+                    safe_print("原因: 可能是防火墙或网络配置问题")
+            
         except Exception as e:
             safe_print(f"✗ 启动HTTP服务器异常: {e}")
             return False
@@ -3916,9 +3985,10 @@ fi
         if server_ip:
             safe_print(f"配置文件下载地址: http://[{server_ip}]:{server_port}/")
             
-            # 测试IPv6访问性
-            safe_print("正在测试IPv6 HTTP访问性...")
+            # 仅测试用户指定的IPv6访问性
+            safe_print("正在测试用户指定的IPv6 HTTP访问性...")
             success, message = test_ipv6_http_access(server_ip, server_port)
+            # 不再尝试本地地址，仅使用用户指定的IPv6
             if success:
                 safe_print("✓ IPv6 HTTP访问测试成功")
             else:
@@ -3928,18 +3998,28 @@ fi
                 safe_print("2. 服务器IPv6配置")
                 safe_print("3. 网络连接")
         
-        safe_print(f"IPv6本地访问: http://[::1]:{server_port}/")
-        safe_print("注意: 此服务器仅支持IPv6访问，不支持IPv4")
+        # 显示访问地址（仅使用用户指定的IPv6）
+        user_ipv6 = get_ip_address()
+        if user_ipv6:
+            safe_print(f"用户指定IPv6访问地址: http://[{user_ipv6}]:{server_port}/")
+            safe_print(f"注意: 服务器仅绑定到您指定的IPv6地址 {user_ipv6}")
+        else:
+            safe_print("警告: 未指定用户自定义IPv6地址")
         
         # 显示IPv6专用检查命令
         safe_print(f"检查命令:")
         safe_print(f"  IPv6防火墙: ip6tables -L INPUT | grep {server_port}")
         safe_print(f"  IPv6监听: ss -6 -tlnp | grep :{server_port}")
-        safe_print(f"  IPv6测试: curl -6 http://[::1]:{server_port}/")
+        if user_ipv6:
+            safe_print(f"  测试用户IPv6: curl -6 http://[{user_ipv6}]:{server_port}/")
+        safe_print(f"  测试本地地址: curl -6 http://[::1]:{server_port}/")
         
         # 提供重启服务器的建议
         safe_print("\n如果需要重启服务器，请执行:")
         safe_print(f"pkill -f config_server.py && python3 {base_dir}/config_server.py &")
+        user_ipv6 = get_ip_address()
+        if user_ipv6:
+            safe_print(f"注意: 服务器将仅绑定到您指定的IPv6: {user_ipv6}")
         
         return True
         
