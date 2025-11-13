@@ -3729,7 +3729,7 @@ if __name__ == "__main__":
     
     # 仅IPv6模式 - 不支持IPv4
     try:
-        safe_print(f"尝试绑定IPv6地址 '::', 端口: {{{{PORT}}}}")
+        safe_print(f"尝试绑定IPv6地址 '::', 端口: {server_port}")
         
         # 创建仅IPv6服务器
         httpd = socketserver.TCPServer(('::', PORT), ConfigHandler)
@@ -3740,10 +3740,10 @@ if __name__ == "__main__":
             httpd.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
             safe_print("✓ IPv6_V6ONLY 设置成功")
         except Exception as sock_err:
-            safe_print(f"⚠ IPv6_V6ONLY 设置失败: {{{{sock_err}}}}")
+            safe_print(f"⚠ IPv6_V6ONLY 设置失败: {{sock_err}}")
         
-        safe_print(f"HTTP服务器已启动，端口: {{{{PORT}}}} (仅IPv6模式)")
-        safe_print(f"绑定地址: [::]:{{{{PORT}}}}")
+        safe_print(f"HTTP服务器已启动，端口: {server_port} (仅IPv6模式)")
+        safe_print(f"绑定地址: [::]:{server_port}")
         
     except PermissionError:
         safe_print("IPv6服务器启动失败: 权限不足")
@@ -3751,20 +3751,20 @@ if __name__ == "__main__":
         sys.exit(1)
     except OSError as os_err:
         if 'Address already in use' in str(os_err):
-            safe_print(f"IPv6服务器启动失败: 端口{{{{PORT}}}}已被占用")
-            safe_print(f"请检查: ss -6 -tlnp | grep :{{{{PORT}}}}")
+            safe_print(f"IPv6服务器启动失败: 端口{server_port}已被占用")
+            safe_print(f"请检查: ss -6 -tlnp | grep :{server_port}")
         elif 'Cannot assign requested address' in str(os_err):
             safe_print("IPv6服务器启动失败: 无法绑定IPv6地址")
             safe_print("请检查: cat /proc/sys/net/ipv6/conf/all/disable_ipv6")
         else:
-            safe_print(f"IPv6服务器启动失败: {{{{os_err}}}}")
+            safe_print(f"IPv6服务器启动失败: {{os_err}}")
         sys.exit(1)
     except Exception as e:
-        safe_print(f"IPv6服务器启动失败: {{{{e}}}}")
+        safe_print(f"IPv6服务器启动失败: {{e}}")
         safe_print("请检查:")
         safe_print("1. 系统是否支持IPv6: ip -6 addr show")
         safe_print("2. IPv6是否启用: cat /proc/sys/net/ipv6/conf/all/disable_ipv6")
-        safe_print(f"3. 端口是否可用: ss -6 -tlnp | grep :{{{{PORT}}}}")
+        safe_print(f"3. 端口是否可用: ss -6 -tlnp | grep :{server_port}")
         sys.exit(1)
     
     try:
