@@ -1555,6 +1555,119 @@ def start_service(start_script, port, base_dir):
         safe_print(f"启动服务失败: {e}")
         return False
 
+def diagnose_connection_issues():
+    """快速诊断连接问题"""
+    safe_print("\n" + "="*80)
+    safe_print("\033[36m🔧 Hysteria2 连接问题诊断工具\033[0m")
+    safe_print("="*80)
+    
+    home = get_user_home()
+    base_dir = f"{home}/.hysteria2"
+    
+    # 检查安装状态
+    if not os.path.exists(base_dir):
+        safe_print("\033[31m❌ Hysteria2 未安装\033[0m")
+        safe_print("解决方案: 运行 python3 hy2.py install --simple")
+        return
+    
+    # 检查配置文件
+    config_path = f"{base_dir}/config/config.json"
+    if not os.path.exists(config_path):
+        safe_print("\033[31m❌ 配置文件不存在\033[0m")
+        safe_print("解决方案: 重新安装 Hysteria2")
+        return
+    
+    # 读取配置
+    try:
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+        port = int(config['listen'].replace('[::]:', ''))
+        password = config['auth']['password']
+        server_ip = get_ip_address()
+    except Exception as e:
+        safe_print(f"\033[31m❌ 配置文件损坏: {e}\033[0m")
+        return
+    
+    # 1. 检查服务状态
+    safe_print("\n\033[33m1. 服务状态检查:\033[0m")
+    pid_file = f"{base_dir}/hysteria.pid"
+    if check_process_running(pid_file):
+        safe_print("\033[32m   ✅ Hysteria2 服务正在运行\033[0m")
+    else:
+        safe_print("\033[31m   ❌ Hysteria2 服务未运行\033[0m")
+        safe_print(f"   🔧 解决方案: bash {base_dir}/start.sh")
+        return
+    
+    # 2. 检查端口监听
+    safe_print("\n\033[33m2. 端口监听检查:\033[0m")
+    if is_port_listening(port):
+        safe_print(f"\033[32m   ✅ UDP端口 {port} 正在监听\033[0m")
+    else:
+        safe_print(f"\033[31m   ❌ UDP端口 {port} 未监听\033[0m")
+        safe_print("   🔧 解决方案: 重启服务或检查端口冲突")
+    
+    # 3. IPv6连通性检查
+    safe_print("\n\033[33m3. IPv6连通性检查:\033[0m")
+    if check_ipv6_connectivity():
+        safe_print("\033[32m   ✅ IPv6网络连接正常\033[0m")
+    else:
+        safe_print("\033[31m   ❌ IPv6网络连接异常\033[0m")
+        safe_print("   🔧 解决方案: 检查IPv6网络配置")
+    
+    # 4. 防火墙检查
+    safe_print("\n\033[33m4. 防火墙检查:\033[0m")
+    try:
+        # 检查ufw状态
+        result = subprocess.run(['ufw', 'status'], capture_output=True, text=True, check=False)
+        if 'Status: active' in result.stdout:
+            if f'{port}/udp' in result.stdout or 'Anywhere' in result.stdout:
+                safe_print(f"\033[32m   ✅ UFW防火墙已开放UDP端口 {port}\033[0m")
+            else:
+                safe_print(f"\033[31m   ❌ UFW防火墙未开放UDP端口 {port}\033[0m")
+                safe_print(f"   🔧 解决方案: sudo ufw allow {port}/udp")
+        else:
+            safe_print("\033[32m   ✅ UFW防火墙未启用\033[0m")
+    except:
+        safe_print("\033[33m   ⚠️  无法检查UFW状态\033[0m")
+    
+    # 5. 生成测试配置
+    safe_print(f"\n\033[33m5. 客户端测试配置:\033[0m")
+    formatted_address = format_ipv6_for_url(server_ip)
+    
+    # 检查混淆配置
+    obfs_info = ""
+    if 'obfs' in config and 'salamander' in config['obfs']:
+        obfs_password = config['obfs']['salamander']['password']
+        obfs_info = f"&obfs=salamander&obfs-password={urllib.parse.quote(obfs_password)}"
+    
+    test_link = f"hysteria2://{urllib.parse.quote(password)}@{formatted_address}:{port}?insecure=1&sni={server_ip}{obfs_info}#Test-Connection"
+    
+    safe_print(f"   服务器: {server_ip}")
+    safe_print(f"   端口: {port} (UDP)")
+    safe_print(f"   密码: {password}")
+    safe_print(f"   测试链接: {test_link}")
+    
+    # 6. 常用修复命令
+    safe_print(f"\n\033[33m6. 常用修复命令:\033[0m")
+    safe_print(f"   重启服务: bash {base_dir}/start.sh")
+    safe_print(f"   查看日志: tail -f {base_dir}/logs/hysteria.log")
+    safe_print(f"   开放端口: sudo ufw allow {port}/udp")
+    safe_print("   测试IPv6: ping6 google.com")
+    safe_print("   检查进程: ps aux | grep hysteria")
+    
+    # 7. 客户端建议
+    safe_print(f"\n\033[33m7. 客户端连接建议:\033[0m")
+    safe_print("   ✅ 确认客户端支持Hysteria2协议")
+    safe_print("   ✅ 确认客户端网络支持IPv6")
+    safe_print("   ✅ 检查客户端防火墙设置")
+    safe_print("   ✅ 尝试不同的客户端软件")
+    safe_print("   ✅ 检查客户端日志获取详细错误")
+    
+    safe_print("\n" + "="*80)
+    safe_print("\033[32m诊断完成！请根据上述建议进行排查。\033[0m")
+    safe_print("如果问题仍然存在，请提供客户端的具体错误信息。")
+    safe_print("="*80)
+
 def show_help():
     """显示帮助信息"""
     safe_print("""
@@ -1575,6 +1688,7 @@ Hysteria2 一键部署工具 (仅IPv6版本 - 防墙增强版)
     client       显示客户端连接指南 (各平台详细说明)
     fix          修复nginx配置和权限问题
     setup-nginx  设置nginx Web伪装
+    diagnose     诊断连接问题 (检查服务状态、防火墙、IPv6等)
     
     del          删除 Hysteria2
     status       查看 Hysteria2 状态
@@ -1965,6 +2079,8 @@ def main():
         show_status()
     elif args.command == 'help':
         show_help()
+    elif args.command == 'diagnose':
+        diagnose_connection_issues()
 
             
     elif args.command == 'setup-nginx':
@@ -2045,13 +2161,75 @@ curl -k https://[{domain}] 或 curl -k https://{domain}  # 如果使用自签名
         password = config['auth']['password']
         use_real_cert = 'letsencrypt' in config['tls']['cert']
         
+        # 检查是否有混淆配置
+        obfs_password = None
+        if 'obfs' in config and 'salamander' in config['obfs']:
+            obfs_password = config['obfs']['salamander']['password']
+        
         insecure_param = "0" if use_real_cert else "1"
         
-        # Hysteria2官方链接格式（简化）
+        # 生成完整的配置链接
         formatted_address = format_ipv6_for_url(server_address)
-        config_link = f"hysteria2://{urllib.parse.quote(password)}@{formatted_address}:{port}?insecure={insecure_param}&sni={server_address}"
+        params = [f"insecure={insecure_param}", f"sni={server_address}"]
         
-        show_client_setup(config_link, server_address, port, password, use_real_cert, args.port_hopping, args.obfs_password, args.http3_masquerade)
+        if obfs_password:
+            params.append("obfs=salamander")
+            params.append(f"obfs-password={urllib.parse.quote(obfs_password)}")
+        
+        config_link = f"hysteria2://{urllib.parse.quote(password)}@{formatted_address}:{port}?{'&'.join(params)}"
+        
+        # 显示详细的连接信息和故障排除
+        safe_print(f"""
+\033[36m┌──────────────────────────────────────────────────────────────────────────────┐\033[0m
+\033[36m│                        Hysteria2 客户端连接配置                              │\033[0m
+\033[36m└──────────────────────────────────────────────────────────────────────────────┘\033[0m
+
+\033[33m服务器信息:\033[0m
+  地址: {server_address} (IPv6)
+  端口: {port} (UDP)
+  密码: {password}
+  协议: Hysteria2
+  {'混淆: Salamander (密码: ' + obfs_password + ')' if obfs_password else '混淆: 未启用'}
+  证书: {'真实证书' if use_real_cert else '自签名证书'}
+  
+\033[32m🔗 一键导入链接:\033[0m
+{config_link}
+
+\033[33m客户端配置参数:\033[0m
+  服务器: {formatted_address}
+  端口: {port}
+  认证: {password}
+  协议: Hysteria2
+  TLS: 启用
+  跳过证书验证: {'否' if use_real_cert else '是'}
+  SNI: {server_address}
+  {'混淆类型: salamander' if obfs_password else ''}
+  {'混淆密码: ' + obfs_password if obfs_password else ''}
+
+\033[31m🔧 故障排除:\033[0m
+如果无法连接，请检查：
+1. 客户端是否支持IPv6网络
+2. 客户端防火墙是否阻止UDP连接
+3. 网络是否支持UDP协议
+4. 服务器防火墙是否开放UDP {port}端口
+5. 客户端是否支持Hysteria2协议
+
+\033[33m💡 测试建议:\033[0m
+1. 先用ping6测试IPv6连通性: ping6 {server_address}
+2. 确认客户端软件版本支持Hysteria2
+3. 尝试不同的客户端软件
+4. 检查客户端日志获取详细错误信息
+
+\033[35m📱 推荐客户端:\033[0m
+- Windows/Android: v2rayN (最新版)
+- iOS: Shadowrocket, QuantumultX
+- macOS: ClashX Meta
+- Linux: Hysteria2官方客户端
+
+如果问题仍然存在，请运行: python3 hy2.py diagnose
+""")
+        
+        show_client_setup(config_link, server_address, port, password, use_real_cert, args.port_hopping or False, obfs_password, args.http3_masquerade or False)
     elif args.command == 'fix':
         # 修复nginx配置和权限问题
         home = get_user_home()
@@ -3459,8 +3637,32 @@ def setup_config_download_service(server_address, v2rayn_file, clash_file, hyste
         subprocess.run(['cp', subscription_plain_file, f'{config_dir}/multi-port-links.txt'], check=True)
         subprocess.run(['cp', json_file, f'{config_dir}/hysteria2.json'], check=True)
         
-        # 直接启动Python HTTP服务器（不使用systemd）
-        safe_print("启动Python HTTP服务器...")
+        # 启动Python HTTP服务器
+        safe_print("设置配置文件下载服务...")
+        
+        def find_free_port(start_port=8080, max_tries=50):
+            """查找空闲端口"""
+            import socket
+            for port in range(start_port, start_port + max_tries):
+                try:
+                    # 测试IPv4端口
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                        s.bind(('127.0.0.1', port))
+                    # 测试IPv6端口
+                    with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as s:
+                        s.bind(('::1', port))
+                    return port
+                except OSError:
+                    continue
+            return None
+        
+        # 查找可用端口
+        server_port = find_free_port()
+        if not server_port:
+            safe_print("错误: 无法找到可用端口（8080-8129已被占用）")
+            return False
+            
+        safe_print(f"使用端口: {server_port}")
         
         # 创建HTTP服务器脚本
         server_script = f'''#!/usr/bin/env python3
@@ -3468,6 +3670,7 @@ import os
 import sys
 import http.server
 import socketserver
+import socket
 from urllib.parse import urlparse
 
 def safe_print(*args, **kwargs):
@@ -3498,17 +3701,42 @@ class ConfigHandler(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
     
     def log_message(self, format, *args):
+        # 禁用访问日志
         pass
 
+class DualStackTCPServer(socketserver.TCPServer):
+    """支持IPv4和IPv6的双栈服务器"""
+    address_family = socket.AF_INET6
+    
+    def __init__(self, server_address, RequestHandlerClass, bind_and_activate=True):
+        super().__init__(server_address, RequestHandlerClass, False)
+        # 设置IPv6双栈模式，同时接受IPv4和IPv6连接
+        self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        if bind_and_activate:
+            try:
+                self.server_bind()
+                self.server_activate()
+            except:
+                self.server_close()
+                raise
+
 if __name__ == "__main__":
-    PORT = 8080
+    PORT = {server_port}
     try:
-        with socketserver.TCPServer(("", PORT), ConfigHandler) as httpd:
-            safe_print(f"HTTP服务器已启动，端口: {{PORT}}")
-            httpd.serve_forever()
+        # 尝试双栈服务器（推荐）
+        try:
+            httpd = DualStackTCPServer(("", PORT), ConfigHandler)
+            safe_print(f"HTTP服务器已启动，端口: {{PORT}} (双栈模式)")
+        except Exception as e:
+            # 如果双栈失败，回退到IPv4
+            safe_print(f"双栈模式失败: {{e}}，尝试IPv4模式")
+            httpd = socketserver.TCPServer(("0.0.0.0", PORT), ConfigHandler)
+            safe_print(f"HTTP服务器已启动，端口: {{PORT}} (IPv4模式)")
+        
+        httpd.serve_forever()
     except Exception as e:
         safe_print(f"服务器启动失败: {{e}}")
-        exit(1)
+        sys.exit(1)
 '''
         
         # 保存并启动服务器
@@ -3517,31 +3745,58 @@ if __name__ == "__main__":
             f.write(server_script)
         subprocess.run(['chmod', '+x', server_file], check=True)
         
-        # 开放IPv6防火墙端口（8080用于配置下载）
-        subprocess.run(['sudo', 'ip6tables', '-A', 'INPUT', '-p', 'tcp', '--dport', '8080', '-j', 'ACCEPT'], check=False)
+        # 开放防火墙端口
+        subprocess.run(['sudo', 'iptables', '-A', 'INPUT', '-p', 'tcp', '--dport', str(server_port), '-j', 'ACCEPT'], check=False)
+        subprocess.run(['sudo', 'ip6tables', '-A', 'INPUT', '-p', 'tcp', '--dport', str(server_port), '-j', 'ACCEPT'], check=False)
+        
+        safe_print("启动Python HTTP服务器...")
         
         # 在后台启动HTTP服务器
-        subprocess.Popen(['python3', server_file], cwd=base_dir)
+        server_process = subprocess.Popen(['python3', server_file], 
+                                        cwd=base_dir, 
+                                        stdout=subprocess.PIPE, 
+                                        stderr=subprocess.PIPE)
         
         # 等待服务启动
         time.sleep(3)
         
         # 验证服务是否启动
-        try:
-            import socket
-            sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
-            sock.settimeout(2)
-            result = sock.connect_ex(('::1', 8080))
-            sock.close()
-            if result == 0:
-                safe_print("Python HTTP服务器启动成功")
-                return True
-            else:
+        server_running = False
+        for protocol, address in [('IPv4', '127.0.0.1'), ('IPv6', '::1')]:
+            try:
+                import socket
+                if protocol == 'IPv4':
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                else:
+                    sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+                sock.settimeout(2)
+                result = sock.connect_ex((address, server_port))
+                sock.close()
+                if result == 0:
+                    safe_print(f"HTTP服务器已启动，端口: {server_port} ({protocol})")
+                    server_running = True
+                    break
+            except Exception as e:
+                continue
+        
+        if not server_running:
+            # 检查进程是否还在运行
+            if server_process.poll() is not None:
+                stdout, stderr = server_process.communicate()
                 safe_print("HTTP服务器启动失败")
+                if stderr:
+                    safe_print(f"错误信息: {stderr.decode('utf-8', 'ignore')}")
                 return False
-        except Exception as e:
-            safe_print(f"验证HTTP服务器失败: {e}")
-            return False
+            else:
+                safe_print(f"HTTP服务器已启动，端口: {server_port}")
+        
+        # 显示配置文件访问信息
+        server_ip = get_ip_address()
+        if server_ip:
+            safe_print(f"配置文件下载地址: http://[{server_ip}]:{server_port}/")
+        safe_print(f"本地访问地址: http://localhost:{server_port}/")
+        
+        return True
         
     except Exception as e:
         safe_print(f"设置配置下载服务失败: {e}")
