@@ -3248,6 +3248,7 @@ import os
 import sys
 import http.server
 import socketserver
+import socket
 from urllib.parse import urlparse
 
 def safe_print(*args, **kwargs):
