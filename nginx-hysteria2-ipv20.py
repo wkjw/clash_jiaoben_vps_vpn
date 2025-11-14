@@ -2163,7 +2163,7 @@ curl -k https://{domain}  # HTTPS访问
     elif args.command == 'install':
         # 简化一键部署
         if args.simple:
-            server_address = args.ip if args.ip else get_ip_address()
+            server_address = args.domain if args.domain else (args.ip if args.ip else get_ip_address())
             port = args.port if args.port else 443
             password = args.password if args.password else "ISDdwk@ASI47!F#WE"
             
@@ -2595,6 +2595,7 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
     """
     safe_print("开始Hysteria2完整部署...")
     safe_print("部署内容：端口跳跃 + Salamander混淆 + nginx Web伪装")
+    publish_address = domain.strip() if domain and domain.strip() else server_address
     
     # 1. 创建目录
     base_dir = create_directories()
@@ -2615,7 +2616,7 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
         if not cert_path:
             cert_path, key_path = generate_self_signed_cert(base_dir, domain)
     else:
-        cert_path, key_path = generate_self_signed_cert(base_dir, server_address)
+        cert_path, key_path = generate_self_signed_cert(base_dir, publish_address)
     safe_print(f"证书配置：{cert_path}")
     
     # 5. 创建Web伪装文件
@@ -2700,7 +2701,7 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
         safe_print(f"Hysteria2服务启动成功")
     
     # 10. 配置nginx Web伪装
-    nginx_success = setup_nginx_web_masquerade(base_dir, server_address, web_dir, cert_path, key_path, port)
+    nginx_success = setup_nginx_web_masquerade(base_dir, publish_address, web_dir, cert_path, key_path, port)
     if nginx_success:
         safe_print(f"nginx Web伪装配置成功")
     
@@ -2708,14 +2709,14 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
     insecure = "1" if not enable_real_cert else "0"
     params = [
         f"insecure={insecure}",
-        f"sni={server_address}",
+        f"sni={publish_address}",
         f"obfs=salamander",
         f"obfs-password={urllib.parse.quote(obfs_password)}"
     ]
     
     # 生成标准的单端口配置链接（兼容性最好）
-    host_port = format_host_port(server_address, port)
-    uri_host = format_host_for_uri(server_address)
+    host_port = format_host_port(publish_address, port)
+    uri_host = format_host_for_uri(publish_address)
     config_link = f"hysteria2://{urllib.parse.quote(password)}@{host_port}?{'&'.join(params)}"
     
     # 如果启用了端口跳跃，生成额外的JSON配置
@@ -2730,7 +2731,7 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
                 }
             },
             "tls": {
-                "sni": server_address,
+                "sni": publish_address,
                 "insecure": insecure == "1"
             },
             "transport": {
@@ -2770,13 +2771,13 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
         
         # 生成v2rayN订阅文件
         subscription_file, subscription_plain_file, _ = generate_multi_port_subscription(
-            server_address, password, obfs_password, port_start, port_end, base_dir, num_configs=100
+            publish_address, password, obfs_password, port_start, port_end, base_dir, num_configs=100
         )
         safe_print(f"已生成 {num_ports} 个端口的配置节点")
         
         # 使用统一输出函数
         show_final_summary(
-            server_address=server_address,
+            server_address=publish_address,
             port=port,
             port_range=f"{port_start}-{port_end}",
             password=password,
@@ -2798,7 +2799,7 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
 # 注意：v2rayN不支持端口跳跃功能，只能使用服务器的主监听端口
 # 使用方法：将此配置导入v2rayN客户端
 
-server: {format_host_port(server_address, port)}
+server: {format_host_port(publish_address, port)}
 auth: {password}
 
 obfs:
@@ -2807,7 +2808,7 @@ obfs:
     password: {obfs_password}
 
 tls:
-  sni: {server_address}
+    sni: {publish_address}
   insecure: true
 
 bandwidth:
@@ -2826,7 +2827,7 @@ http:
 # 支持端口跳跃功能，提供更好的防封锁能力
 # 使用方法：保存为 config.yaml，然后运行 hysteria client -c config.yaml
 
-server: {format_host_port(server_address, port)}
+server: {format_host_port(publish_address, port)}
 auth: {password}
 
 transport:
@@ -2840,7 +2841,7 @@ obfs:
     password: {obfs_password}
 
 tls:
-  sni: {server_address}
+    sni: {publish_address}
   insecure: true
 
 bandwidth:
@@ -2859,7 +2860,7 @@ http:
 # 2. 客户端多端口连接: 客户端在{port_start}-{port_end}范围内随机选择端口连接
 # 
 # 当前配置使用方式1，保持客户端配置简洁
-# 如需使用方式2，请将server改为: {format_host_for_uri(server_address)}:{port_start}-{port_end}
+# 如需使用方式2，请将server改为: {format_host_for_uri(publish_address)}:{port_start}-{port_end}
 """
         
         # 生成Clash多端口配置（与v2rayN相同的多节点方案）
@@ -2872,12 +2873,12 @@ http:
             clash_proxy_names.append(node_name)
             clash_proxies.append(f"""  - name: "{node_name}"
     type: hysteria2
-    server: "{server_address}"
+    server: "{publish_address}"
     port: {port_num}
     password: "{password}"
     obfs: salamander
     obfs-password: "{obfs_password}"
-    sni: {server_address}
+    sni: {publish_address}
     skip-cert-verify: true
     fast-open: true""")
         
@@ -2923,7 +2924,7 @@ rules:
 # 这个配置让客户端真正实现端口跳跃（随机选择端口连接）
 # 使用方法：保存为 hopping.yaml，运行 hysteria client -c hopping.yaml
 
-server: {format_host_for_uri(server_address)}:{port_start}-{port_end}
+server: {format_host_for_uri(publish_address)}:{port_start}-{port_end}
 auth: {password}
 
 transport:
@@ -2937,7 +2938,7 @@ obfs:
     password: {obfs_password}
 
 tls:
-  sni: {server_address}
+    sni: {publish_address}
   insecure: true
 
 bandwidth:
@@ -2975,12 +2976,12 @@ http:
         safe_print(f"客户端端口跳跃配置已保存到：{hysteria_client_hopping_file}")
         
         # 复制配置文件到nginx Web目录，提供下载
-        setup_config_download_service(server_address, v2rayn_file, clash_file, hysteria_official_file, hysteria_client_hopping_file, subscription_file, subscription_plain_file, config_file)
+        setup_config_download_service(publish_address, v2rayn_file, clash_file, hysteria_official_file, hysteria_client_hopping_file, subscription_file, subscription_plain_file, config_file)
         
     else:
         # 使用统一输出函数
         show_final_summary(
-            server_address=server_address,
+            server_address=publish_address,
             port=port,
             port_range=None,
             password=password,
@@ -2991,7 +2992,7 @@ http:
         )
     
     return {
-        "server": server_address,
+        "server": publish_address,
         "port": port,
         "port_range": f"{port_start}-{port_end}",
         "password": password,
