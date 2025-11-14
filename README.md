@@ -66,12 +66,20 @@
 sudo apt update -y && sudo apt install -y curl socat iptables iptables-persistent && sudo iptables -A INPUT -p tcp -j ACCEPT && sudo iptables -A INPUT -p udp -j ACCEPT && sudo iptables-save > /etc/iptables/rules.v4
 
 
-# 方式一：wget下载
+# 方式一：wget下载(ipv4)
 cd ~ && wget https://raw.githubusercontent.com/wkjw/clash_jiaoben_vps_vpn/refs/heads/main/nginx-hysteria2.py && python3 nginx-hysteria2.py install --simple --port-range 28888-29999 --enable-bbr
 
 
-# 方式二：curl下载  
+# 方式二：curl下载(ipv4)
 cd ~ && curl -O https://raw.githubusercontent.com/wkjw/clash_jiaoben_vps_vpn/refs/heads/main/nginx-hysteria2.py && python3 nginx-hysteria2.py install --simple --port-range 28888-29999 --enable-bbr
+
+
+# 方式三：wget下载(ipv6-域名版)
+cd ~ && curl -O https://raw.githubusercontent.com/wkjw/clash_jiaoben_vps_vpn/refs/heads/main/nginx-hysteria2-ipv6-dom.py && python3 nginx-hysteria2-ipv6-dom.py install --simple --domain yourdomain.com --use-real-cert --email your@email.com --port-range 28888-29999 --enable-bbr
+
+
+# 方式四：curl下载(ipv6-域名版)
+cd ~ && curl -O https://raw.githubusercontent.com/wkjw/clash_jiaoben_vps_vpn/refs/heads/main/nginx-hysteria2-ipv6-dom.py && python3 nginx-hysteria2-ipv6-dom.py install --simple --domain yourdomain.com --use-real-cert --email your@email.com --port-range 28888-29999 --enable-bbr
 
 ```
 
