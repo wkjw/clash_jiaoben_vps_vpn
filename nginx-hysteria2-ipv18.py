@@ -44,6 +44,52 @@ def safe_print(*args, **kwargs):
             message = ' '.join(str(arg) for arg in args)
             print(message.encode('ascii', 'ignore').decode('ascii'))
 
+def is_ipv6_address(value):
+    """判断字符串是否为合法IPv6地址"""
+    if not value:
+        return False
+    try:
+        socket.inet_pton(socket.AF_INET6, value)
+        return True
+    except OSError:
+        return False
+
+def format_host_for_uri(host):
+    """在URI中使用的主机名，IPv6需要加方括号"""
+    if is_ipv6_address(host) and not host.startswith('['):
+        return f'[{host}]'
+    return host
+
+def format_host_port(host, port):
+    """格式化主机和端口，自动处理IPv6格式"""
+    return f"{format_host_for_uri(host)}:{port}"
+
+def parse_listen_port(value, default=443):
+    """从listen配置解析端口号，兼容:443或[::]:443等格式"""
+    if value is None:
+        return default
+    if isinstance(value, int):
+        return value
+    listen = str(value).strip()
+    if not listen:
+        return default
+    # 去掉方括号包裹的IPv6地址
+    if listen.startswith('['):
+        closing = listen.find(']')
+        if closing != -1:
+            remainder = listen[closing + 1:]
+            listen = remainder
+    # 去掉前导冒号
+    if listen.startswith(':'):
+        listen = listen[1:]
+    # 提取最后一个冒号后的部分
+    if ':' in listen:
+        listen = listen.rsplit(':', 1)[-1]
+    try:
+        return int(listen)
+    except ValueError:
+        return default
+
 def get_user_home():
     """Get user home directory"""
     return str(Path.home())
@@ -138,61 +184,63 @@ def set_nginx_permissions(web_dir):
         return False
 
 def check_port_available(port):
-    """检查IPv6 UDP端口是否可用"""
+    """检查端口是否可用（仅使用socket）"""
     try:
-        # 对于Hysteria2，我们主要关心IPv6 UDP端口
-        # nginx使用TCP端口，hysteria使用UDP端口，它们可以共存
-        
-        # 检查IPv6 UDP端口是否可用（这是hysteria2需要的）
         with socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as s:
             s.settimeout(1)
             try:
-                s.bind(('::', port))  # IPv6绑定所有接口
-                return True  # IPv6 UDP端口可用
+                try:
+                    s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+                except (AttributeError, OSError):
+                    pass
+                s.bind(('::', port, 0, 0))
+                return True
             except:
-                # IPv6 UDP端口被占用，检查是否是hysteria进程
                 return False
-                
     except:
-        # 如果有任何异常，保守起见返回端口不可用
         return False
 
 def is_port_listening(port):
-    """检查IPv6端口是否已经在监听（服务是否已启动）"""
+    """检查端口是否已经在监听（服务是否已启动）"""
+    sock = None
     try:
-        # 尝试连接到IPv6端口
-        # 由于 Hysteria 使用 UDP，我们检查 IPv6 UDP 端口
         sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
         sock.settimeout(1)
-        
-        # 尝试发送一个数据包到IPv6端口
-        # 如果端口打开，send不会抛出异常
         try:
-            sock.sendto(b"ping", ('::1', port))  # IPv6 localhost
+            sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+        except (AttributeError, OSError):
+            pass
+        loopback = ('::1', port, 0, 0)
+        
+        try:
+            sock.sendto(b"ping", loopback)
             try:
-                sock.recvfrom(1024)  # 尝试接收响应
+                sock.recvfrom(1024)
                 return True
             except socket.timeout:
-                # 没收到响应但也没报错，可能仍在监听
                 return True
         except:
             pass
             
-        # 另一种检查方式：尝试绑定IPv6端口，如果失败说明端口已被占用
         try:
             test_sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
-            test_sock.bind(('::', port))  # IPv6绑定所有接口
+            try:
+                test_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+            except (AttributeError, OSError):
+                pass
+            test_sock.bind(('::', port, 0, 0))
             test_sock.close()
-            return False  # 能成功绑定说明端口未被占用
+            return False
         except:
-            return True  # 无法绑定说明端口已被占用
+            return True
             
         return False
     except:
         return False
     finally:
         try:
-            sock.close()
+            if sock:
+                sock.close()
         except:
             pass
 
@@ -349,39 +397,45 @@ def download_hysteria2(base_dir):
         sys.exit(1)
 
 def get_ip_address():
-    """获取本机IPv6地址（优先获取公网IPv6，如果失败则使用本地IPv6）"""
-    # 首先尝试获取公网IPv6
+    """获取本机IP地址（优先获取公网IP，如果失败则使用本地IP）"""
+    # 首先尝试获取公网IP
     try:
-        # 尝试从支持IPv6的API获取公网IPv6
-        with urllib.request.urlopen('https://api6.ipify.org', timeout=5) as response:
-            public_ipv6 = response.read().decode('utf-8')
-            if public_ipv6 and ':' in public_ipv6:
-                return public_ipv6
+        with urllib.request.urlopen('https://api64.ipify.org', timeout=5) as response:
+            public_ip = response.read().decode('utf-8').strip()
+            if public_ip:
+                return public_ip
     except:
         try:
-            # 备选IPv6 API
-            with urllib.request.urlopen('https://ipv6.icanhazip.com', timeout=5) as response:
-                public_ipv6 = response.read().decode('utf-8').strip()
-                if public_ipv6 and ':' in public_ipv6:
-                    return public_ipv6
+            request = urllib.request.Request(
+                'https://ifconfig.co/ip',
+                headers={'User-Agent': 'curl/8.0', 'Accept': 'text/plain'}
+            )
+            with urllib.request.urlopen(request, timeout=5) as response:
+                public_ip = response.read().decode('utf-8').strip()
+                if public_ip:
+                    return public_ip
         except:
             pass
 
-    # 如果获取公网IPv6失败，尝试获取本地IPv6
+    # 如果获取公网IP失败，尝试获取本地IP
     try:
         s = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
-        # 连接到Google的IPv6 DNS服务器获取本地IPv6
-        s.connect(('2001:4860:4860::8888', 53))
-        local_ipv6 = s.getsockname()[0]
-        s.close()
-        return local_ipv6
+        try:
+            s.connect(('2001:4860:4860::8888', 80, 0, 0))
+            local_ip = s.getsockname()[0]
+            if local_ip:
+                return local_ip
+        finally:
+            s.close()
     except:
-        # 如果所有方法都失败，返回IPv6本地回环地址
-        return '::1'
+        pass
+
+    # 如果所有方法都失败，返回本地回环地址
+    return '::1'
 
 def setup_nginx_smart_proxy(base_dir, domain, web_dir, cert_path, key_path, hysteria_port):
-    """设置nginx Web伪装：IPv6 TCP端口显示正常网站，IPv6 UDP端口用于Hysteria2"""
-    safe_print("正在配置nginx Web伪装（IPv6模式）...")
+    """设置nginx Web伪装：TCP端口显示正常网站，UDP端口用于Hysteria2"""
+    safe_print("正在配置nginx Web伪装...")
     
     try:
         # 检查证书文件
@@ -405,7 +459,7 @@ def setup_nginx_smart_proxy(base_dir, domain, web_dir, cert_path, key_path, hyst
         nginx_user = ensure_nginx_user()
         safe_print(f"使用nginx用户: {nginx_user}")
         
-        # 创建nginx 纯IPv6专用Web配置
+        # 创建nginx标准Web配置
         nginx_conf = f"""user {nginx_user};
 worker_processes auto;
 error_log /var/log/nginx/error.log notice;
@@ -422,9 +476,8 @@ http {{
     keepalive_timeout 65;
     server_tokens off;
     
-    # 纯IPv6配置 - 只监听IPv6端口
     server {{
-        listen [::]:443 ssl http2 ipv6only=on default_server;
+        listen [::]:443 ssl default_server;
         server_name _;
         
         ssl_certificate {os.path.abspath(cert_path)};
@@ -934,11 +987,11 @@ def get_real_certificate(base_dir, domain, email="admin@example.com"):
         return None, None
 
 def create_config(base_dir, port, password, cert_path, key_path, domain, enable_web_masquerade=True, custom_web_dir=None, enable_port_hopping=False, obfs_password=None, enable_http3_masquerade=False):
-    """创建Hysteria2配置文件（端口跳跃、混淆、HTTP/3伪装）- 纯IPv6版本"""
+    """创建Hysteria2配置文件（端口跳跃、混淆、HTTP/3伪装）"""
     
-    # 基础配置 - 纯IPv6
+    # 基础配置
     config = {
-        "listen": f"[::]:{port}",  # IPv6监听所有接口
+        "listen": f"[::]:{port}",
         "tls": {
             "cert": cert_path,
             "key": key_path
@@ -958,25 +1011,21 @@ def create_config(base_dir, port, password, cert_path, key_path, domain, enable_
             "timestamp": True
         },
         "resolver": {
-            "type": "tcp",
+            "type": "udp",
             "tcp": {
-                "addr": "[2001:4860:4860::8888]:53",  # Google IPv6 DNS
+                "addr": "8.8.8.8:53",
                 "timeout": "4s"
-            }
-        },
-        "outbound": {
-            "type": "direct",
-            "direct": {
-                "bindInterface": "",
-                "bindDevice": "",
-                "mode": "ipv6_only"  # 强制IPv6出站
+            },
+            "udp": {
+                "addr": "8.8.8.8:53", 
+                "timeout": "4s"
             }
         }
     }
     
     # 端口跳跃配置 (Port Hopping)
     if enable_port_hopping:
-        # Hysteria2服务器端只监听单个端口，端口跳跃通过iptables DNAT实现
+        # Hysteria2服务器端只监听单个端口，端口跳跃通过ip6tables REDIRECT实现
         port_start = max(1024, port - 25)  
         port_end = min(65535, port + 25)
         
@@ -986,9 +1035,9 @@ def create_config(base_dir, port, password, cert_path, key_path, domain, enable_
             port_end = 1074
         
         # 服务器仍然只监听单个端口
-        config["listen"] = f":{port}"
+        config["listen"] = f"[::]:{port}"
         
-        # 记录端口跳跃信息，用于后续iptables配置
+        # 记录端口跳跃信息，用于后续ip6tables配置
         config["_port_hopping"] = {
             "enabled": True,
             "range_start": port_start,
@@ -1161,7 +1210,7 @@ fi
 def delete_hysteria2():
     """完整删除Hysteria2安装的5步流程"""
     safe_print("开始完整删除Hysteria2...")
-    safe_print("删除流程: 停止服务 → 清理iptables → 清理nginx → 删除目录 → 清理服务")
+    safe_print("删除流程: 停止服务 → 清理ip6tables → 清理nginx → 删除目录 → 清理服务")
     
     home = get_user_home()
     base_dir = f"{home}/.hysteria2"
@@ -1216,8 +1265,8 @@ def delete_hysteria2():
     except Exception as e:
         safe_print(f"停止服务失败: {e}")
     
-    # 2. 清理iptables规则
-    safe_print("\n步骤2: 清理iptables规则")
+    # 2. 清理ip6tables规则
+    safe_print("\n步骤2: 清理ip6tables规则")
     try:
         port_ranges = []
         
@@ -1227,7 +1276,8 @@ def delete_hysteria2():
             try:
                 with open(config_path, 'r') as f:
                     config = json.load(f)
-                listen_port = int(config.get('listen', ':443').replace(':', ''))
+                listen_value = config.get('listen', '[::]:443')
+                listen_port = parse_listen_port(listen_value, default=443)
                 
                 # 计算可能的端口范围
                 port_start = max(1024, listen_port - 25)
@@ -1250,24 +1300,24 @@ def delete_hysteria2():
         ]
         port_ranges.extend(common_ranges)
         
-        # 清理ip6tables规则（IPv6）
+        # 清理ip6tables规则
         for port_start, port_end, listen_port in port_ranges:
             try:
-                # 删除IPv6 NAT规则
+                # 删除NAT规则
                 subprocess.run([
                     'sudo', 'ip6tables', '-t', 'nat', '-D', 'PREROUTING',
                     '-p', 'udp', '--dport', f'{port_start}:{port_end}',
-                    '-j', 'DNAT', '--to-destination', f'[::]:{listen_port}'
+                    '-j', 'REDIRECT', '--to-ports', str(listen_port)
                 ], check=False, capture_output=True)
                 
-                # 删除IPv6 INPUT规则
+                # 删除INPUT规则
                 subprocess.run([
                     'sudo', 'ip6tables', '-D', 'INPUT',
                     '-p', 'udp', '--dport', f'{port_start}:{port_end}',
                     '-j', 'ACCEPT'
                 ], check=False, capture_output=True)
                 
-                # 删除IPv6单端口规则
+                # 删除单端口规则
                 subprocess.run([
                     'sudo', 'ip6tables', '-D', 'INPUT',
                     '-p', 'udp', '--dport', str(listen_port),
@@ -1287,10 +1337,10 @@ def delete_hysteria2():
             except:
                 pass
         
-        safe_print("iptables规则清理完成")
+        safe_print("ip6tables规则清理完成")
         
     except Exception as e:
-        safe_print(f"清理iptables规则失败: {e}")
+        safe_print(f"清理ip6tables规则失败: {e}")
     
     # 3. 清理nginx配置
     safe_print("\n步骤3: 清理nginx配置")
@@ -1396,7 +1446,7 @@ Hysteria2完全删除完成！
 
 已清理的内容:
 - Hysteria2服务进程
-- iptables端口跳跃规则
+- ip6tables端口跳跃规则
 - nginx配置文件
 - 安装目录: {base_dir}
 - 系统服务文件
@@ -1505,14 +1555,9 @@ def start_service(start_script, port, base_dir):
 def show_help():
     """显示帮助信息"""
     safe_print("""
-Hysteria2 一键部署工具 (IPv6防墙增强版)
+Hysteria2 一键部署工具 (防墙增强版)
 
-重要说明：
-- 本版本专为纯IPv6网络优化，完全移除IPv4支持
-- nginx只监听IPv6 SSL 443端口，不支持IPv4和HTTP 80端口
-- Hysteria2基于IPv6 UDP/QUIC协议，支持端口跳跃、混淆和HTTP/3伪装
-- 服务器和客户端强制使用IPv6地址进行通信
-- 完全IPv6环境，有效规避IPv4网络检测和封锁
+重要说明：Hysteria2基于UDP/QUIC协议，支持端口跳跃、混淆和HTTP/3伪装！
 
 使用方法:
     python3 hy2.py [命令] [选项]
@@ -1612,8 +1657,8 @@ def create_nginx_masquerade(base_dir, domain, web_dir):
     abs_key_path = os.path.abspath(f"{base_dir}/cert/server.key")
     
     nginx_conf = f"""server {{
-    listen [::]:80 ipv6only=on default_server;
-    listen [::]:443 ssl http2 ipv6only=on default_server;
+    listen [::]:80;
+    listen [::]:443 ssl;
     server_name {domain} _;
     
     ssl_certificate {abs_cert_path};
@@ -1784,11 +1829,10 @@ def setup_dual_port_masquerade(base_dir, domain, web_dir, cert_path, key_path):
     
     # 简化nginx配置：只配置SSL证书，使用默认Web目录
     try:
-        # 创建纯IPv6 SSL配置 - 只有HTTPS
-        ssl_conf = f"""# SSL configuration for Hysteria2 masquerade - Pure IPv6 Only
+        # 创建简化的SSL配置
+        ssl_conf = f"""# SSL configuration for Hysteria2 masquerade
 server {{
-    listen [::]:443 ssl http2 ipv6only=on default_server;
-    server_name _;
+    listen [::]:443 ssl default_server;
     
     ssl_certificate {os.path.abspath(cert_path)};
     ssl_certificate_key {os.path.abspath(key_path)};
@@ -1798,14 +1842,8 @@ server {{
     ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384;
     ssl_prefer_server_ciphers off;
     
-    # 指定网站根目录和默认文件
-    root {nginx_web_dir};
-    index index.html index.htm;
-    
-    # 处理静态文件
-    location / {{
-        try_files $uri $uri/ /index.html;
-    }}
+    # 使用默认配置，不指定root（使用nginx默认）
+    # 这样就使用了我们刚才覆盖的文件
     
     # 隐藏nginx版本
     server_tokens off;
@@ -1914,23 +1952,14 @@ def main():
         show_status()
     elif args.command == 'help':
         show_help()
-
-            
+        return
     elif args.command == 'setup-nginx':
-        # 设置nginx Web伪装
         home = get_user_home()
         base_dir = f"{home}/.hysteria2"
-        
-        if not os.path.exists(base_dir):
-            safe_print("Hysteria2 未安装，请先运行 install 命令")
-            sys.exit(1)
-        
-        # 获取配置信息
         config_path = f"{base_dir}/config/config.json"
         if not os.path.exists(config_path):
-            safe_print("配置文件不存在")
+            safe_print("配置文件不存在，请先安装 Hysteria2")
             sys.exit(1)
-        
         with open(config_path, 'r') as f:
             config = json.load(f)
         
@@ -1985,7 +2014,8 @@ curl -k https://{domain}  # 如果使用自签名证书
         insecure_param = "0" if use_real_cert else "1"
         
         # Hysteria2官方链接格式（简化）
-        config_link = f"hysteria2://{urllib.parse.quote(password)}@{server_address}:{port}?insecure={insecure_param}&sni={server_address}"
+        host_port = format_host_port(server_address, port)
+        config_link = f"hysteria2://{urllib.parse.quote(password)}@{host_port}?insecure={insecure_param}&sni={server_address}"
         
         show_client_setup(config_link, server_address, port, password, use_real_cert, args.port_hopping, args.obfs_password, args.http3_masquerade)
     elif args.command == 'fix':
@@ -2054,11 +2084,10 @@ curl -k https://{domain}  # 如果使用自签名证书
                 safe_print("证书文件不存在，重新生成...")
                 cert_path, key_path = generate_self_signed_cert(base_dir, domain)
             
-            # 创建纯IPv6 SSL配置
-            ssl_conf = f"""# SSL configuration for Hysteria2 masquerade - Pure IPv6
+            # 创建简化的SSL配置
+            ssl_conf = f"""# SSL configuration for Hysteria2 masquerade
 server {{
-    listen [::]:443 ssl http2 ipv6only=on default_server;
-    server_name _;
+    listen [::]:443 ssl default_server;
     
     ssl_certificate {os.path.abspath(cert_path)};
     ssl_certificate_key {os.path.abspath(key_path)};
@@ -2370,7 +2399,8 @@ curl -k https://{domain}  # HTTPS访问
             params.append(f"obfs=salamander")
             params.append(f"obfs-password={urllib.parse.quote(args.obfs_password)}")
         
-        config_link = f"hysteria2://{urllib.parse.quote(password)}@{server_address}:{port}?{'&'.join(params)}"
+        host_port = format_host_port(server_address, port)
+        config_link = f"hysteria2://{urllib.parse.quote(password)}@{host_port}?{'&'.join(params)}"
         
         safe_print(f"""
 Hysteria2 防墙增强版安装成功！
@@ -2457,93 +2487,106 @@ UDP测试: 使用客户端连接验证Hysteria2服务
         sys.exit(1)
 
 def setup_port_hopping_iptables(port_start, port_end, listen_port):
-    """配置ip6tables实现IPv6端口跳跃"""
+    """配置ip6tables实现端口跳跃"""
     try:
-        safe_print(f"配置ip6tables端口跳跃（IPv6）...")
+        safe_print("配置ip6tables端口跳跃...")
         safe_print(f"端口范围: {port_start}-{port_end} -> {listen_port}")
-        
-        # 检查ip6tables是否可用
+
         try:
             subprocess.run(['ip6tables', '--version'], check=True, capture_output=True)
         except:
-            safe_print("ip6tables不可用，跳过IPv6端口跳跃配置")
+            safe_print("ip6tables不可用，跳过端口跳跃配置")
             return False
-        
-        # 清理可能存在的旧IPv6规则
+
         try:
-            subprocess.run(['sudo', 'ip6tables', '-t', 'nat', '-D', 'PREROUTING', '-p', 'udp', '--dport', f'{port_start}:{port_end}', '-j', 'DNAT', '--to-destination', f'[::]:{listen_port}'], check=False, capture_output=True)
+            subprocess.run([
+                'sudo', 'ip6tables', '-t', 'nat', '-D', 'PREROUTING',
+                '-p', 'udp', '--dport', f'{port_start}:{port_end}',
+                '-j', 'REDIRECT', '--to-ports', str(listen_port)
+            ], check=False, capture_output=True)
         except:
             pass
-        
-        # 添加端口跳跃的ip6tables规则
-        # IPv6 NAT规则：将端口范围转发到监听端口
+
+        try:
+            subprocess.run([
+                'sudo', 'ip6tables', '-D', 'INPUT',
+                '-p', 'udp', '--dport', f'{port_start}:{port_end}',
+                '-j', 'ACCEPT'
+            ], check=False, capture_output=True)
+        except:
+            pass
+
+        try:
+            subprocess.run([
+                'sudo', 'ip6tables', '-D', 'INPUT',
+                '-p', 'udp', '--dport', str(listen_port),
+                '-j', 'ACCEPT'
+            ], check=False, capture_output=True)
+        except:
+            pass
+
         subprocess.run([
-            'sudo', 'ip6tables', '-t', 'nat', '-A', 'PREROUTING', 
-            '-p', 'udp', '--dport', f'{port_start}:{port_end}', 
-            '-j', 'DNAT', '--to-destination', f'[::]:{listen_port}'
+            'sudo', 'ip6tables', '-t', 'nat', '-A', 'PREROUTING',
+            '-p', 'udp', '--dport', f'{port_start}:{port_end}',
+            '-j', 'REDIRECT', '--to-ports', str(listen_port)
         ], check=True)
-        
-        # 确保基本的ip6tables规则存在
-        # 允许已建立的IPv6连接和相关连接
+
         subprocess.run([
             'sudo', 'ip6tables', '-I', 'INPUT', '1',
             '-m', 'conntrack', '--ctstate', 'ESTABLISHED,RELATED',
             '-j', 'ACCEPT'
         ], check=False)
-        
-        # 允许IPv6本地回环
+
         subprocess.run([
             'sudo', 'ip6tables', '-I', 'INPUT', '2',
             '-i', 'lo', '-j', 'ACCEPT'
         ], check=False)
-        
-        # 允许SSH端口（防止锁定）
+
         subprocess.run([
             'sudo', 'ip6tables', '-I', 'INPUT', '3',
             '-p', 'tcp', '--dport', '22', '-j', 'ACCEPT'
         ], check=False)
-        
-        # 开放IPv6端口范围的防火墙规则
+
         subprocess.run([
-            'sudo', 'ip6tables', '-A', 'INPUT', 
-            '-p', 'udp', '--dport', f'{port_start}:{port_end}', 
+            'sudo', 'ip6tables', '-A', 'INPUT',
+            '-p', 'udp', '--dport', f'{port_start}:{port_end}',
             '-j', 'ACCEPT'
         ], check=True)
-        
-        # 开放IPv6监听端口
+
         subprocess.run([
-            'sudo', 'ip6tables', '-A', 'INPUT', 
-            '-p', 'udp', '--dport', str(listen_port), 
+            'sudo', 'ip6tables', '-A', 'INPUT',
+            '-p', 'udp', '--dport', str(listen_port),
             '-j', 'ACCEPT'
         ], check=True)
-        
-        # 开放IPv6 HTTPS端口（nginx）- 只开放443，不开放80
+
+        subprocess.run([
+            'sudo', 'ip6tables', '-A', 'INPUT',
+            '-p', 'tcp', '--dport', '80', '-j', 'ACCEPT'
+        ], check=False)
+
         subprocess.run([
             'sudo', 'ip6tables', '-A', 'INPUT',
             '-p', 'tcp', '--dport', '443', '-j', 'ACCEPT'
         ], check=False)
-        
-        # 尝试保存ip6tables规则
+
         try:
-            # Debian/Ubuntu
             subprocess.run(['sudo', 'ip6tables-save'], check=True, capture_output=True)
             subprocess.run(['sudo', 'netfilter-persistent', 'save'], check=False, capture_output=True)
         except:
             try:
-                # CentOS/RHEL
                 subprocess.run(['sudo', 'service', 'ip6tables', 'save'], check=False, capture_output=True)
             except:
                 pass
-        
-        safe_print(f"ip6tables端口跳跃配置成功")
-        safe_print(f"IPv6客户端可连接端口范围: {port_start}-{port_end}")
-        safe_print(f"IPv6服务器实际监听端口: {listen_port}")
-        
+
+        safe_print("ip6tables端口跳跃配置成功")
+        safe_print(f"客户端可连接端口范围: {port_start}-{port_end}")
+        safe_print(f"服务器实际监听端口: {listen_port}")
+
         return True
-        
+
     except Exception as e:
         safe_print(f"ip6tables配置失败: {e}")
-        safe_print("IPv6端口跳跃功能可能无法正常工作")
+        safe_print("端口跳跃功能可能无法正常工作")
         return False
 
 def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F#WE", enable_real_cert=False, domain=None, email="admin@example.com", port_range=None, enable_bbr=False):
@@ -2579,9 +2622,9 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
     web_dir = create_web_masquerade(base_dir)
     safe_print(f"创建Web伪装：{web_dir}")
     
-    # 6. 创建Hysteria2配置（端口跳跃+混淆+HTTP/3伪装）- 纯IPv6模式
+    # 6. 创建Hysteria2配置（端口跳跃+混淆+HTTP/3伪装）
     hysteria_config = {
-        "listen": f"[::]:{port}",  # IPv6-only UDP监听
+        "listen": f"[::]:{port}",
         "tls": {
             "cert": cert_path,
             "key": key_path
@@ -2607,12 +2650,6 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
             "up": "1000 mbps",
             "down": "1000 mbps"
         },
-        "outbound": {
-            "ipv6_only": True  # 强制仅使用IPv6出站
-        },
-        "dns": {
-            "servers": ["2001:4860:4860::8888", "2606:4700:4700::1111"]  # IPv6 DNS
-        },
         "log": {
             "level": "warn",
             "output": f"{base_dir}/logs/hysteria.log",
@@ -2625,7 +2662,7 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
         json.dump(hysteria_config, f, indent=2, ensure_ascii=False)
     safe_print(f"创建配置：{config_path}")
     
-    # 7. 配置端口跳跃（iptables）
+    # 7. 配置端口跳跃（ip6tables）
     if port_range:
         # 使用用户指定的端口范围
         port_start, port_end = parse_port_range(port_range)
@@ -2667,7 +2704,7 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
     if nginx_success:
         safe_print(f"nginx Web伪装配置成功")
     
-    # 11. 生成客户端配置 - IPv6格式
+    # 11. 生成客户端配置
     insecure = "1" if not enable_real_cert else "0"
     params = [
         f"insecure={insecure}",
@@ -2676,35 +2713,16 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
         f"obfs-password={urllib.parse.quote(obfs_password)}"
     ]
     
-    # 格式化IPv6地址
-    if ':' in server_address and not server_address.startswith('['):
-        # IPv6地址需要用方括号包围
-        server_formatted = f"[{server_address}]"
-    else:
-        server_formatted = server_address
-    
     # 生成标准的单端口配置链接（兼容性最好）
-    config_link = f"hysteria2://{urllib.parse.quote(password)}@{server_formatted}:{port}?{'&'.join(params)}"
+    host_port = format_host_port(server_address, port)
+    uri_host = format_host_for_uri(server_address)
+    config_link = f"hysteria2://{urllib.parse.quote(password)}@{host_port}?{'&'.join(params)}"
     
-    # 如果启用了端口跳跃，生成额外的JSON配置 - IPv6版本
+    # 如果启用了端口跳跃，生成额外的JSON配置
     if port_range:
         port_hopping_config = {
-            "server": f"[{server_address}]:{port}" if ':' in server_address else f"{server_address}:{port}",
+            "server": host_port,
             "auth": password,
-            "resolver": {
-                "type": "tcp",
-                "tcp": {
-                    "addr": "[2001:4860:4860::8888]:53"
-                }
-            },
-            "outbound": {
-                "type": "direct",
-                "direct": {
-                    "bindInterface": "",
-                    "bindDevice": "",
-                    "mode": "ipv6_only"
-                }
-            },
             "obfs": {
                 "type": "salamander",
                 "salamander": {
@@ -2725,14 +2743,13 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
     
     # 12. 输出部署结果
     if port_range:
-        # 准备下载链接 - IPv6格式
-        server_http_formatted = f"[{server_address}]" if ':' in server_address else server_address
+        # 准备下载链接
         download_links = {
-            "v2rayN多端口订阅 (推荐)": f"http://{server_http_formatted}:8080/v2rayn-subscription.txt",
-            "多端口配置明文查看": f"http://{server_http_formatted}:8080/multi-port-links.txt",
-            "Clash多端口配置": f"http://{server_http_formatted}:8080/clash.yaml", 
-            "官方客户端配置": f"http://{server_http_formatted}:8080/hysteria-official.yaml",
-            "JSON配置 (完整功能)": f"http://{server_http_formatted}:8080/hysteria2.json"
+            "v2rayN多端口订阅 (推荐)": f"http://{uri_host}:8080/v2rayn-subscription.txt",
+            "多端口配置明文查看": f"http://{uri_host}:8080/multi-port-links.txt",
+            "Clash多端口配置": f"http://{uri_host}:8080/clash.yaml", 
+            "官方客户端配置": f"http://{uri_host}:8080/hysteria-official.yaml",
+            "JSON配置 (完整功能)": f"http://{uri_host}:8080/hysteria2.json"
         }
         
         # 生成多端口配置（v2rayN和Clash使用相同的端口列表）
@@ -2776,26 +2793,13 @@ def deploy_hysteria2_complete(server_address, port=443, password="ISDdwk@ASI47!F
             json.dump(port_hopping_config, f, indent=2, ensure_ascii=False)
         safe_print(f"端口跳跃JSON配置已保存到：{config_file}")
         
-        # 生成v2rayN兼容配置（单一端口，因为v2rayN不支持端口跳跃）- IPv6版本
-        server_formatted = f"[{server_address}]:{port}" if ':' in server_address else f"{server_address}:{port}"
-        v2rayn_config = f"""# Hysteria2 v2rayN兼容配置 - 纯IPv6版本
+        # 生成v2rayN兼容配置（单一端口，因为v2rayN不支持端口跳跃）
+        v2rayn_config = f"""# Hysteria2 v2rayN兼容配置 - 单一端口版本
 # 注意：v2rayN不支持端口跳跃功能，只能使用服务器的主监听端口
 # 使用方法：将此配置导入v2rayN客户端
 
-server: {server_formatted}
+server: {format_host_port(server_address, port)}
 auth: {password}
-
-resolver:
-  type: tcp
-  tcp:
-    addr: "[2001:4860:4860::8888]:53"
-
-outbound:
-  type: direct
-  direct:
-    bindInterface: ""
-    bindDevice: ""
-    mode: ipv6_only
 
 obfs:
   type: salamander
@@ -2810,36 +2814,20 @@ bandwidth:
   up: 50 mbps
   down: 200 mbps
 
-# 本地代理服务配置 - 纯IPv6
 socks5:
-  listen: "[::1]:1080"
-  # SOCKS5代理仅使用IPv6，配合ipv6_only出站模式
+    listen: "[::1]:1080"
 
 http:
-  listen: "[::1]:8080"  
-  # HTTP代理仅使用IPv6，配合ipv6_only出站模式
+    listen: "[::1]:8080"
 """
         
-        # 生成Hysteria2官方客户端YAML配置（正确的端口跳跃格式）- IPv6版本
-        server_formatted = f"[{server_address}]:{port}" if ':' in server_address else f"{server_address}:{port}"
-        hysteria_official_config = f"""# Hysteria2 官方客户端配置 - IPv6端口跳跃版本
+        # 生成Hysteria2官方客户端YAML配置（正确的端口跳跃格式）
+        hysteria_official_config = f"""# Hysteria2 官方客户端配置 - 端口跳跃版本
 # 支持端口跳跃功能，提供更好的防封锁能力
 # 使用方法：保存为 config.yaml，然后运行 hysteria client -c config.yaml
 
-server: {server_formatted}
+server: {format_host_port(server_address, port)}
 auth: {password}
-
-resolver:
-  type: tcp
-  tcp:
-    addr: "[2001:4860:4860::8888]:53"
-
-outbound:
-  type: direct
-  direct:
-    bindInterface: ""
-    bindDevice: ""
-    mode: ipv6_only
 
 transport:
   type: udp
@@ -2860,34 +2848,31 @@ bandwidth:
   down: 200 mbps
 
 socks5:
-  listen: "[::1]:1080"
-  # SOCKS5服务仅使用IPv6
-  disableUDP: false
+    listen: "[::1]:1080"
 
 http:
-  listen: "[::1]:8080"
-  # HTTP代理服务仅使用IPv6
+    listen: "[::1]:8080"
 
-# IPv6端口跳跃说明：
+# 端口跳跃说明：
 # Hysteria2端口跳跃有两种实现方式：
-# 1. 服务器端ip6tables DNAT: 将{port_start}-{port_end}流量转发到{port}
+# 1. 服务器端ip6tables REDIRECT: 将{port_start}-{port_end}流量转发到{port}
 # 2. 客户端多端口连接: 客户端在{port_start}-{port_end}范围内随机选择端口连接
 # 
 # 当前配置使用方式1，保持客户端配置简洁
-# 如需使用方式2，请将server改为: [{server_address}]:{port_start}-{port_end}
+# 如需使用方式2，请将server改为: {format_host_for_uri(server_address)}:{port_start}-{port_end}
 """
         
         # 生成Clash多端口配置（与v2rayN相同的多节点方案）
         clash_proxies = []
         clash_proxy_names = []
         
-        # 生成多个端口的Clash节点配置 - IPv6版本
+        # 生成多个端口的Clash节点配置
         for i, port_num in enumerate(selected_ports, 1):
-            node_name = f"Hysteria2-IPv6-端口{port_num}-节点{i:02d}"
+            node_name = f"Hysteria2-端口{port_num}-节点{i:02d}"
             clash_proxy_names.append(node_name)
             clash_proxies.append(f"""  - name: "{node_name}"
     type: hysteria2
-    server: {server_address}
+    server: "{server_address}"
     port: {port_num}
     password: "{password}"
     obfs: salamander
@@ -2905,7 +2890,7 @@ allow-lan: false
 bind-address: '*'
 mode: rule
 log-level: info
-external-controller: '127.0.0.1:9090'
+external-controller: '[::1]:9090'
 
 proxies:
 {chr(10).join(clash_proxies)}
@@ -2933,26 +2918,13 @@ rules:
   - MATCH,节点选择
 """
         
-        # 生成真正的客户端端口跳跃配置（可选）- IPv6版本
-        server_hop_formatted = f"[{server_address}]:{port_start}-{port_end}" if ':' in server_address else f"{server_address}:{port_start}-{port_end}"
-        hysteria_client_hopping_config = f"""# Hysteria2 客户端端口跳跃配置 - IPv6版本
+        # 生成真正的客户端端口跳跃配置（可选）
+        hysteria_client_hopping_config = f"""# Hysteria2 客户端端口跳跃配置
 # 这个配置让客户端真正实现端口跳跃（随机选择端口连接）
 # 使用方法：保存为 hopping.yaml，运行 hysteria client -c hopping.yaml
 
-server: {server_hop_formatted}
+server: {format_host_for_uri(server_address)}:{port_start}-{port_end}
 auth: {password}
-
-resolver:
-  type: tcp
-  tcp:
-    addr: "[2001:4860:4860::8888]:53"
-
-outbound:
-  type: direct
-  direct:
-    bindInterface: ""
-    bindDevice: ""
-    mode: ipv6_only
 
 transport:
   type: udp
@@ -2973,16 +2945,13 @@ bandwidth:
   down: 200 mbps
 
 socks5:
-  listen: "[::1]:1080"
-  # SOCKS5代理仅IPv6访问
-  disableUDP: false
+    listen: "[::1]:1080"
 
 http:
-  listen: "[::1]:8080"
-  # HTTP代理仅IPv6访问
+    listen: "[::1]:8080"
 
 # 此配置需要服务器端开放{port_start}-{port_end}端口范围
-# IPv6端口跳跃配置，每个端口都需要独立的Hysteria2服务实例或负载均衡配置
+# 每个端口都需要独立的Hysteria2服务实例或负载均衡配置
 """
 
         # 保存YAML配置文件
@@ -3070,9 +3039,9 @@ def setup_nginx_web_masquerade(base_dir, server_address, web_dir, cert_path, key
         create_web_files_in_directory(nginx_web_dir)
         set_nginx_permissions(nginx_web_dir)
         
-        # 4. 配置nginx 纯IPv6 SSL
+        # 4. 配置nginx SSL
         ssl_conf = f"""server {{
-    listen [::]:443 ssl http2 ipv6only=on default_server;
+    listen [::]:443 ssl;
     server_name _;
     
     ssl_certificate {os.path.abspath(cert_path)};
@@ -3277,7 +3246,6 @@ def setup_config_download_service(server_address, v2rayn_file, clash_file, hyste
         server_script = f'''#!/usr/bin/env python3
 import os
 import sys
-import socket
 import http.server
 import socketserver
 from urllib.parse import urlparse
@@ -3312,18 +3280,14 @@ class ConfigHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
+class IPv6TCPServer(socketserver.TCPServer):
+    address_family = socket.AF_INET6
+
 if __name__ == "__main__":
     PORT = 8080
     try:
-        # 使用IPv6地址绑定
-        with socketserver.TCPServer(("::", PORT), ConfigHandler, bind_and_activate=False) as httpd:
-            httpd.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            # 设置为IPv6 only
-            if hasattr(socket, 'IPPROTO_IPV6') and hasattr(socket, 'IPV6_V6ONLY'):
-                httpd.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
-            httpd.server_bind()
-            httpd.server_activate()
-            safe_print(f"HTTP服务器已启动，IPv6端口: {{PORT}}")
+        with IPv6TCPServer(("::", PORT), ConfigHandler) as httpd:
+            safe_print(f"HTTP服务器已启动，端口: {{PORT}}")
             httpd.serve_forever()
     except Exception as e:
         safe_print(f"服务器启动失败: {{e}}")
@@ -3337,7 +3301,7 @@ if __name__ == "__main__":
         subprocess.run(['chmod', '+x', server_file], check=True)
         
         # 开放防火墙端口（8080用于配置下载）
-        subprocess.run(['sudo', 'iptables', '-A', 'INPUT', '-p', 'tcp', '--dport', '8080', '-j', 'ACCEPT'], check=False)
+        subprocess.run(['sudo', 'ip6tables', '-A', 'INPUT', '-p', 'tcp', '--dport', '8080', '-j', 'ACCEPT'], check=False)
         
         # 在后台启动HTTP服务器
         subprocess.Popen(['python3', server_file], cwd=base_dir)
@@ -3345,15 +3309,19 @@ if __name__ == "__main__":
         # 等待服务启动
         time.sleep(3)
         
-        # 验证IPv6服务是否启动
+        # 验证服务是否启动
         try:
             import socket
             sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
             sock.settimeout(2)
-            result = sock.connect_ex(('::1', 8080))
+            try:
+                sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+            except (AttributeError, OSError):
+                pass
+            result = sock.connect_ex(('::1', 8080, 0, 0))
             sock.close()
             if result == 0:
-                safe_print("Python HTTP服务器启动成功（IPv6）")
+                safe_print("Python HTTP服务器启动成功")
                 return True
             else:
                 safe_print("HTTP服务器启动失败")
@@ -3410,6 +3378,8 @@ def parse_port_range(port_range_str):
 def show_final_summary(server_address, port, port_range, password, obfs_password, config_link, enable_port_hopping=False, download_links=None, num_ports=None):
     import urllib.parse
     """显示最终的完整摘要信息 - 包含下载链接、客户端链接和作者信息"""
+    host_port = format_host_port(server_address, port)
+    host_443 = format_host_port(server_address, 443)
     
     safe_print("\n" + "="*80)
     safe_print("\033[36m┌──────────────────────────────────────────────────────────────────────────────┐\033[0m")
@@ -3458,27 +3428,20 @@ def show_final_summary(server_address, port, port_range, password, obfs_password
     safe_print("   UDP协议: 基于QUIC/HTTP3，抗封锁能力强")
     
     # 使用提醒
-    safe_print(f"\n\033[31m使用提醒（纯IPv6）:\033[0m")
-    safe_print("   Hysteria2使用IPv6 UDP协议，确保防火墙已开放IPv6 UDP端口")
+    safe_print(f"\n\033[31m使用提醒:\033[0m")
+    safe_print("   Hysteria2使用UDP协议，确保防火墙已开放UDP端口")
     if enable_port_hopping and port_range:
-        safe_print(f"   端口跳跃模式：需要开放IPv6 UDP端口范围 {port_range}")
+        safe_print(f"   端口跳跃模式：需要开放UDP端口范围 {port_range}")
     else:
-        safe_print(f"   需要开放IPv6 UDP端口 {port}")
-    safe_print(f"   nginx Web伪装只监听IPv6 SSL端口 {port}（不支持IPv4和HTTP）")
-    safe_print("   客户端必须支持IPv6网络才能正常连接")
+        safe_print(f"   需要开放UDP端口 {port}")
+    safe_print(f"   nginx Web伪装需要开放TCP端口 {port}")
     
-    # 443端口地址 和 10个随机v2ray地址 - IPv6格式
-    safe_print(f"\n\033[93m443端口连接地址 (IPv6):\033[0m")
-    # 格式化IPv6地址
-    if ':' in server_address and not server_address.startswith('['):
-        server_formatted = f"[{server_address}]"
-    else:
-        server_formatted = server_address
-    
-    hysteria_443_url = f"hysteria2://{urllib.parse.quote(password)}@{server_formatted}:443?insecure=1&sni={server_address}&obfs=salamander&obfs-password={urllib.parse.quote(obfs_password)}#Hysteria2-IPv6-443"
+    # 443端口地址 和 10个随机v2ray地址
+    safe_print(f"\n\033[93m443端口连接地址:\033[0m")
+    hysteria_443_url = f"hysteria2://{urllib.parse.quote(password)}@{host_443}?insecure=1&sni={server_address}&obfs=salamander&obfs-password={urllib.parse.quote(obfs_password)}#Hysteria2-443"
     safe_print(f"   {hysteria_443_url}")
     
-    safe_print(f"\n\033[93m10个随机IPv6地址 (可直接复制):\033[0m")
+    safe_print(f"\n\033[93m10个随机v2ray地址 (可直接复制):\033[0m")
     random_ports = []
     random_urls = []
     if port_range and '-' in str(port_range):
@@ -3490,14 +3453,15 @@ def show_final_summary(server_address, port, port_range, password, obfs_password
         random_ports.sort()
         
         for i, random_port in enumerate(random_ports, 1):
-            random_url = f"hysteria2://{urllib.parse.quote(password)}@{server_formatted}:{random_port}?insecure=1&sni={server_address}&obfs=salamander&obfs-password={urllib.parse.quote(obfs_password)}#V2Ray-IPv6-{random_port}-{i:02d}"
+            random_host_port = format_host_port(server_address, random_port)
+            random_url = f"hysteria2://{urllib.parse.quote(password)}@{random_host_port}?insecure=1&sni={server_address}&obfs=salamander&obfs-password={urllib.parse.quote(obfs_password)}#V2Ray-{random_port}-{i:02d}"
             random_urls.append(random_url)
             safe_print(f"   {random_url}")
         
         # 生成Base64订阅格式
         subscription_content = "\n".join(random_urls)
         subscription_base64 = base64.b64encode(subscription_content.encode('utf-8')).decode('utf-8')
-        safe_print(f"\n\033[92m10个随机IPv6地址的Base64订阅:\033[0m")
+        safe_print(f"\n\033[92m10个随机地址的Base64订阅:\033[0m")
         safe_print(f"   {subscription_base64}")
     else:
         safe_print("   (需要启用多端口配置才能生成随机地址)")
@@ -3537,10 +3501,14 @@ def save_global_config(server_address, port, port_range, password, obfs_password
     try:
         home = get_user_home()
         config_dir = f"{home}/.hysteria2"
+        uri_host = format_host_for_uri(server_address)
+        host_port = format_host_port(server_address, port)
         
         # 保存配置信息
         global_config = {
             "server_address": server_address,
+            "uri_host": uri_host,
+            "host_port": host_port,
             "port": port,
             "port_range": port_range,
             "password": password,
@@ -3573,7 +3541,9 @@ fi
 load_config() {{
     CONFIG=$(cat "$CONFIG_FILE")
     SERVER_ADDRESS=$(echo "$CONFIG" | python3 -c "import sys, json; print(json.load(sys.stdin)['server_address'])" 2>/dev/null || echo "N/A")
+    URI_HOST=$(echo "$CONFIG" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('uri_host', data['server_address']))" 2>/dev/null || echo "$SERVER_ADDRESS")
     PORT=$(echo "$CONFIG" | python3 -c "import sys, json; print(json.load(sys.stdin)['port'])" 2>/dev/null || echo "N/A")
+    HOST_PORT=$(echo "$CONFIG" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('host_port', '{{}}:{{}}'.format(data['server_address'], data['port'])))" 2>/dev/null || echo "$SERVER_ADDRESS:$PORT")
     PORT_RANGE=$(echo "$CONFIG" | python3 -c "import sys, json; print(json.load(sys.stdin).get('port_range', 'N/A'))" 2>/dev/null || echo "N/A")
     PASSWORD=$(echo "$CONFIG" | python3 -c "import sys, json; print(json.load(sys.stdin)['password'])" 2>/dev/null || echo "N/A")
     OBFS_PASSWORD=$(echo "$CONFIG" | python3 -c "import sys, json; print(json.load(sys.stdin)['obfs_password'])" 2>/dev/null || echo "N/A")
@@ -3603,13 +3573,7 @@ show_node_info() {{
     if [ -n "$RANDOM_PORTS" ]; then
         URLS=""
         for port in $RANDOM_PORTS; do
-            # 检查是否为IPv6地址并格式化
-            if echo "$SERVER_ADDRESS" | grep -q ':' && ! echo "$SERVER_ADDRESS" | grep -q '^\['; then
-                SERVER_FORMATTED="[$SERVER_ADDRESS]"
-            else
-                SERVER_FORMATTED="$SERVER_ADDRESS"
-            fi
-            url="hysteria2://$(python3 -c "import urllib.parse; print(urllib.parse.quote('$PASSWORD'))")@$SERVER_FORMATTED:$port?insecure=1&sni=$SERVER_ADDRESS&obfs=salamander&obfs-password=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$OBFS_PASSWORD'))")#V2Ray-IPv6-$port"
+            url="hysteria2://$(python3 -c \"import urllib.parse; print(urllib.parse.quote('$PASSWORD'))\")@${{URI_HOST}}:$port?insecure=1&sni=$SERVER_ADDRESS&obfs=salamander&obfs-password=$(python3 -c \"import urllib.parse; print(urllib.parse.quote('$OBFS_PASSWORD'))\")#V2Ray-$port"
             echo "$url"
             if [ -z "$URLS" ]; then
                 URLS="$url"
@@ -3635,16 +3599,10 @@ show_config_info() {{
     
     echo ""
     echo "配置文件下载地址:"
-    # 检查是否为IPv6地址并格式化
-    if echo "$SERVER_ADDRESS" | grep -q ':' && ! echo "$SERVER_ADDRESS" | grep -q '^\['; then
-        SERVER_HTTP_FORMATTED="[$SERVER_ADDRESS]"
-    else
-        SERVER_HTTP_FORMATTED="$SERVER_ADDRESS"
-    fi
-    echo "v2rayN多端口订阅: http://$SERVER_HTTP_FORMATTED:8080/v2rayn-subscription.txt"
-    echo "多端口配置明文: http://$SERVER_HTTP_FORMATTED:8080/multi-port-links.txt"
-    echo "Clash多端口配置: http://$SERVER_HTTP_FORMATTED:8080/clash.yaml"
-    echo "官方客户端配置: http://$SERVER_HTTP_FORMATTED:8080/hysteria2.json"
+    echo "v2rayN多端口订阅: http://${{URI_HOST}}:8080/v2rayn-subscription.txt"
+    echo "多端口配置明文: http://${{URI_HOST}}:8080/multi-port-links.txt"
+    echo "Clash多端口配置: http://${{URI_HOST}}:8080/clash.yaml"
+    echo "官方客户端配置: http://${{URI_HOST}}:8080/hysteria2.json"
     
     echo ""
     echo "本地配置文件:"
@@ -3691,20 +3649,20 @@ show_service_status() {{
     # 检查端口监听
     load_config
     if [ "$PORT" != "N/A" ]; then
-        if netstat -ulnp 2>/dev/null | grep ":$PORT " > /dev/null; then
+        if netstat -ulnp 2>/dev/null | grep ":$PORT" > /dev/null; then
             echo "UDP端口 $PORT: 监听中"
         else
             echo "UDP端口 $PORT: 未监听"
         fi
     fi
     
-    if netstat -tlnp 2>/dev/null | grep ":443 " > /dev/null; then
+    if netstat -tlnp 2>/dev/null | grep ":443" > /dev/null; then
         echo "TCP端口 443: 监听中 (nginx)"
     else
         echo "TCP端口 443: 未监听"
     fi
     
-    if netstat -tlnp 2>/dev/null | grep ":8080 " > /dev/null; then
+    if netstat -tlnp 2>/dev/null | grep ":8080" > /dev/null; then
         echo "TCP端口 8080: 监听中 (配置下载)"
     else
         echo "TCP端口 8080: 未监听"
@@ -3923,14 +3881,9 @@ def generate_multi_port_subscription(server_address, password, obfs_password, po
         encoded_obfs_password = urllib.parse.quote(obfs_password, safe='')
         encoded_node_name = urllib.parse.quote(node_name, safe='')
         
-        # 生成hysteria2链接 - IPv6格式
-        if ':' in server_address and not server_address.startswith('['):
-            # IPv6地址需要用方括号包围
-            server_formatted = f"[{server_address}]"
-        else:
-            server_formatted = server_address
-        
-        hysteria2_url = f"hysteria2://{encoded_password}@{server_formatted}:{port}?insecure=1&sni={server_address}&obfs=salamander&obfs-password={encoded_obfs_password}#{encoded_node_name}"
+        # 生成hysteria2链接
+        hysteria2_host_port = format_host_port(server_address, port)
+        hysteria2_url = f"hysteria2://{encoded_password}@{hysteria2_host_port}?insecure=1&sni={server_address}&obfs=salamander&obfs-password={encoded_obfs_password}#{encoded_node_name}"
         hysteria2_links.append(hysteria2_url)
     
     # 创建v2rayN订阅内容（Base64编码）
