@@ -3090,6 +3090,12 @@ def setup_nginx_web_masquerade(base_dir, server_address, web_dir, cert_path, key
     server_tokens off;
     add_header X-Frame-Options DENY always;
     add_header X-Content-Type-Options nosniff always;
+}}
+
+server {{
+    listen [::]:80;
+    server_name _;
+    return 301 https://$server_name$request_uri;
 }}"""
         
         # 5. 写入nginx配置
