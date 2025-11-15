@@ -1,65 +1,3 @@
-# 🚀 网络工具集合
-
-**一键部署多种网络工具的综合解决方案**
-
----
-
-## 📑 目录
-
-- [🛡️ Hysteria2 一键部署工具](#-hysteria2-一键部署工具)
-  - [✨ 核心特性](#-核心特性)
-  - [🚀 快速开始](#-快速开始)
-  - [🔧 技术架构](#-技术架构)
-  - [🔥 防火墙配置](#-防火墙配置)
-  - [📊 功能详解](#-功能详解)
-  - [📥 配置文件下载](#-配置文件下载)
-  - [💻 客户端支持](#-客户端支持)
-  - [⚠️ 重要说明](#️-重要说明)
-
-- [📦 ArgoSB Python版本](#-argosb-python版本)
-  - [📋 使用方法](#-使用方法)
-  - [🔧 配置选项](#-配置选项)
-  - [📁 文件结构](#-文件结构)
-  - [✅ 优势特点](#-优势特点)
-
-- [🌐 Glitch 网站保活脚本](#-glitch-网站保活脚本)
-  - [🔥 主要功能](#-主要功能)
-  - [💾 安装与使用](#-安装与使用)
-  - [⚙️ 参数说明](#️-参数说明)
-  - [🔄 工作原理](#-工作原理)
-  - [🖥️ 后台运行](#️-后台运行)
-
-- [🐧 Ubuntu Proot 环境](#-ubuntu-proot-环境)
-  - [⚡ 一键安装](#-一键安装)
-  - [🎯 功能特点](#-功能特点)
-  - [🔄 环境管理](#-环境管理)
-  - [📦 预装软件](#-预装软件)
-
-- [👨‍💻 作者信息](#-作者信息)
-- [📄 许可证](#-许可证)
-
----
-
-## 🛡️ Hysteria2 一键部署工具
-
-> **防墙增强版 - 专业的Hysteria2部署脚本，支持多端口配置、Salamander混淆、nginx Web伪装和BBR优化**
-
-### ✨ 核心特性
-
-| 特性 | 描述 |
-|------|------|
-| 🎯 **一键部署** | 单命令完成所有配置 |
-| 🔄 **多端口配置** | 支持生成100个不同端口的节点配置 |
-| 🔒 **Salamander混淆** | 自动生成混淆密码，防DPI检测 |
-| 🌐 **nginx Web伪装** | TCP端口显示正常企业网站 |
-| ⚡ **BBR优化** | 启用BBR拥塞控制算法，提升网络性能 |
-| 🔒 **自动HTTPS证书** | 支持Let's Encrypt自动申请和续期 |
-| 🔧 **完整清理** | 删除时自动清理所有配置 |
-| 📥 **配置下载** | 自动生成并提供多平台配置文件下载 |
-
-### 🚀 快速开始
-
-
 #### 📥 一键部署
 ```bash
 # 安装环境
@@ -81,6 +19,16 @@ cd ~ && curl -O https://raw.githubusercontent.com/wkjw/clash_jiaoben_vps_vpn/ref
 # 方式四：curl下载(ipv6-域名版)
 cd ~ && curl -O https://raw.githubusercontent.com/wkjw/clash_jiaoben_vps_vpn/refs/heads/main/nginx-hysteria2-ipv6-dom.py && python3 nginx-hysteria2-ipv6-dom.py install --simple --domain yourdomain.com --use-real-cert --email your@email.com --port-range 28888-29999 --enable-bbr
 
+
+# 安装环境
+apt update -y && apt install -y curl socat iptables iptables-persistent python3 python3-pip
+
+# 方式五：wget下载(ipv6-域名-euserv版)
+cd ~ && curl -O https://raw.githubusercontent.com/wkjw/clash_jiaoben_vps_vpn/refs/heads/main/nginx-hysteria2-ipv6-dom-eu.py && python3 nginx-hysteria2-ipv6-dom-eu.py install --simple --domain yourdomain.com --use-real-cert --email your@email.com --port-range 28888-29999 --enable-bbr
+
+
+# 方式六：curl下载(ipv6-域名-euserv版)
+cd ~ && curl -O https://raw.githubusercontent.com/wkjw/clash_jiaoben_vps_vpn/refs/heads/main/nginx-hysteria2-ipv6-dom-eu.py && python3 nginx-hysteria2-ipv6-dom-eu.py install --simple --domain yourdomain.com --use-real-cert --email your@email.com --port-range 28888-29999 --enable-bbr
 ```
 
 #### 📥 下载脚本
