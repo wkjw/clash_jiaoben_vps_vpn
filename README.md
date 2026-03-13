@@ -34,6 +34,17 @@ cd ~ && curl -O https://raw.githubusercontent.com/wkjw/clash_jiaoben_vps_vpn/ref
 #### 📥 下载脚本
 
 ```bash
+# SWAP（即 Swap 行为 0B），执行以下命令创建一个 1GB 的应急虚拟内存|输入命令查看：free -h
+fallocate -l 1G /swapfile
+chmod 600 /swapfile
+mkswap /swapfile
+swapon /swapfile
+echo '/swapfile none swap sw 0 0' | tee -a /etc/fstab
+```
+
+#### 📥 下载脚本
+
+```bash
 # 方式一：wget下载
 wget https://raw.githubusercontent.com/zhumengkang/agsb/main/nginx-hysteria2.py
 
