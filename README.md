@@ -1,5 +1,8 @@
 #### 📥 一键部署
 ```bash
+# 删除强制配置
+sudo sed -i '/bullseye-backports/d' /etc/apt/sources.list
+
 # 安装环境
 sudo apt update -y && sudo apt install -y curl socat iptables iptables-persistent && sudo iptables -A INPUT -p tcp -j ACCEPT && sudo iptables -A INPUT -p udp -j ACCEPT && sudo iptables-save > /etc/iptables/rules.v4
 
